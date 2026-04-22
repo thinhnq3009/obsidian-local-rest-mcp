@@ -40,6 +40,14 @@
   ],
   "author": "",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thinhnq3009/obsidian-local-rest-mcp.git"
+  },
+  "homepage": "https://github.com/thinhnq3009/obsidian-local-rest-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/thinhnq3009/obsidian-local-rest-mcp/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "zod": "^4.3.6"
