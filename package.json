@@ -1,6 +1,6 @@
 {
   "name": "obsidian-local-rest-mcp",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "A local STDIO MCP server that exposes Obsidian tools through the Obsidian Local REST API.",
   "type": "module",
   "main": "./dist/index.js",
