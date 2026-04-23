@@ -6,16 +6,28 @@
 
 This server acts as an adapter between an MCP client and your local Obsidian vault.
 
+Canvas support is embedded directly in the server. Agents calling these MCP tools get local JSON Canvas validation, field constraints, and examples through the tool schemas and descriptions, so they do not need to research `.canvas` syntax on the web before using the server.
+
 Supported tools:
 
 - `obsidian_list_files`
 - `obsidian_read_note`
+- `obsidian_read_canvas`
 - `obsidian_write_note`
+- `obsidian_create_canvas`
+- `obsidian_update_canvas`
+- `obsidian_delete_canvas`
 - `obsidian_append_to_note`
 - `obsidian_patch_heading`
 - `obsidian_search`
 - `obsidian_get_active_file`
 - `obsidian_open_file`
+- `obsidian_add_canvas_node`
+- `obsidian_update_canvas_node`
+- `obsidian_remove_canvas_node`
+- `obsidian_add_canvas_edge`
+- `obsidian_update_canvas_edge`
+- `obsidian_remove_canvas_edge`
 - `obsidian_move_path`
 - `obsidian_rename_path`
 - `obsidian_delete_path`
@@ -120,6 +132,75 @@ Read a note:
 }
 ```
 
+Create a canvas:
+
+```json
+{
+  "path": "Maps/Plan.canvas",
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "file",
+      "file": "Projects/Plan.md",
+      "x": 0,
+      "y": 0,
+      "width": 420,
+      "height": 260
+    },
+    {
+      "id": "n2",
+      "type": "text",
+      "text": "Next steps",
+      "x": 520,
+      "y": 0,
+      "width": 320,
+      "height": 180
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "fromNode": "n1",
+      "fromSide": "right",
+      "toNode": "n2",
+      "toSide": "left",
+      "label": "next"
+    }
+  ]
+}
+```
+
+Add a node to an existing canvas:
+
+```json
+{
+  "path": "Maps/Plan.canvas",
+  "node": {
+    "id": "n3",
+    "type": "link",
+    "url": "https://example.com",
+    "x": 920,
+    "y": 0,
+    "width": 300,
+    "height": 180
+  }
+}
+```
+
+Add an edge to an existing canvas:
+
+```json
+{
+  "path": "Maps/Plan.canvas",
+  "edge": {
+    "id": "e2",
+    "fromNode": "n2",
+    "toNode": "n3",
+    "label": "reference"
+  }
+}
+```
+
 Patch a heading:
 
 ```json
@@ -178,6 +259,12 @@ Path-management caveats:
 - Recursive folder operations are currently `markdown-only`.
 - If a subtree contains non-markdown or binary files, the tool fails instead of performing a partial operation.
 
+Canvas notes:
+
+- `.canvas` files are written through the standard Obsidian file endpoints.
+- The server validates JSON Canvas documents locally before writing them.
+- Semantic canvas tools update one node or one edge at a time so agents do not need to hand-edit the full JSON document.
+
 ## Development Scripts
 
 ```bash
@@ -208,4 +295,5 @@ The package is set up as a CLI package:
 - Uses `zod` for tool input/output schemas
 - Handles request timeout, light retry, path encoding, and optional SSL verification
 - Returns compact tool responses for model use
+- Encodes JSON Canvas syntax and constraints locally in the server for MCP agents
 - Uses only the current Obsidian Local REST API capabilities available to this project

@@ -117,6 +117,30 @@ describe("ObsidianClient", () => {
     expect(capturedRequest?.body).toBe(JSON.stringify("done"));
   });
 
+  it("writes generic files with the requested content type", async () => {
+    let capturedRequest: Parameters<RequestLike>[0] | undefined;
+    const requestMock: RequestLike = (request) => {
+      capturedRequest = request;
+      return Promise.resolve({
+        status: 200,
+        statusText: "OK",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ message: "ok" }),
+      });
+    };
+
+    const client = new ObsidianClient(config, { requestImpl: requestMock });
+    await client.writeFile("Maps/Plan.canvas", "{}", {
+      contentType: "application/json; charset=utf-8",
+      successMessage: "Canvas written successfully.",
+    });
+
+    expect(capturedRequest?.headers?.["Content-Type"]).toBe("application/json; charset=utf-8");
+    expect(capturedRequest?.body).toBe("{}");
+  });
+
   it("sends advanced search using jsonlogic content type", async () => {
     let capturedRequest: Parameters<RequestLike>[0] | undefined;
     const requestMock: RequestLike = (request) => {

@@ -31,15 +31,17 @@ export class ObsidianClientError extends Error {
 export const vaultPathSchema = z
   .string()
   .min(1, "path is required")
-  .transform((value) => value.replace(/\\/g, "/").replace(/^\/+/, "").trim())
-  .refine((value) => value.length > 0, "path is required")
-  .refine((value) => !value.split("/").some((segment) => segment === ".."), "path must stay inside the vault");
+  .refine((value) => value.trim().length > 0, "path is required")
+  .refine((value) => !normalizeVaultPathInput(value).split("/").some((segment) => segment === ".."), "path must stay inside the vault");
 
 export const optionalVaultPathSchema = z
   .string()
   .default("")
-  .transform((value) => value.replace(/\\/g, "/").replace(/^\/+/, "").trim())
-  .refine((value) => !value.split("/").some((segment) => segment === ".."), "path must stay inside the vault");
+  .refine((value) => !normalizeVaultPathInput(value).split("/").some((segment) => segment === ".."), "path must stay inside the vault");
+
+export function normalizeVaultPathInput(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+}
 
 export type VaultEntry = {
   path: string;

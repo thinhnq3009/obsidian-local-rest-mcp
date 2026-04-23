@@ -1,5 +1,9 @@
 import type { ToolRegistrar } from "./common.js";
+import { registerAddCanvasEdgeTool } from "./addCanvasEdge.js";
+import { registerAddCanvasNodeTool } from "./addCanvasNode.js";
 import { registerAppendToNoteTool } from "./appendToNote.js";
+import { registerCreateCanvasTool } from "./createCanvas.js";
+import { registerDeleteCanvasTool } from "./deleteCanvas.js";
 import { registerDeletePathTool } from "./deletePath.js";
 import { registerGetActiveFileTool } from "./getActiveFile.js";
 import { registerListFilesTool } from "./listFiles.js";
@@ -10,17 +14,27 @@ import { registerPatchHeadingTool } from "./patchHeading.js";
 import { registerReadNoteTool } from "./readNote.js";
 import { registerReadNoteMetadataTool } from "./readNoteMetadata.js";
 import { registerRenamePathTool } from "./renamePath.js";
+import { registerRemoveCanvasEdgeTool } from "./removeCanvasEdge.js";
+import { registerRemoveCanvasNodeTool } from "./removeCanvasNode.js";
 import { registerSearchContentAdvancedTool } from "./searchContentAdvanced.js";
 import { registerSearchTool } from "./search.js";
 import { registerStatPathTool } from "./statPath.js";
 import { registerTreeTool } from "./tree.js";
+import { registerReadCanvasTool } from "./readCanvas.js";
+import { registerUpdateCanvasEdgeTool } from "./updateCanvasEdge.js";
+import { registerUpdateCanvasNodeTool } from "./updateCanvasNode.js";
+import { registerUpdateCanvasTool } from "./updateCanvas.js";
 import { registerWriteNoteTool } from "./writeNote.js";
 
 export const toolRegistrars: ToolRegistrar[] = [
   registerListFilesTool,
   registerReadNoteTool,
   registerReadNoteMetadataTool,
+  registerReadCanvasTool,
   registerWriteNoteTool,
+  registerCreateCanvasTool,
+  registerUpdateCanvasTool,
+  registerDeleteCanvasTool,
   registerAppendToNoteTool,
   registerPatchHeadingTool,
   registerPatchFrontmatterTool,
@@ -28,6 +42,12 @@ export const toolRegistrars: ToolRegistrar[] = [
   registerSearchContentAdvancedTool,
   registerGetActiveFileTool,
   registerOpenFileTool,
+  registerAddCanvasNodeTool,
+  registerUpdateCanvasNodeTool,
+  registerRemoveCanvasNodeTool,
+  registerAddCanvasEdgeTool,
+  registerUpdateCanvasEdgeTool,
+  registerRemoveCanvasEdgeTool,
   registerMovePathTool,
   registerRenamePathTool,
   registerDeletePathTool,

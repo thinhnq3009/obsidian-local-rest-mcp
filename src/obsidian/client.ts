@@ -94,18 +94,29 @@ export class ObsidianClient {
   }
 
   public async writeNote(path: string, content: string): Promise<{ path: string; message: string }> {
+    return this.writeFile(path, content, {
+      contentType: "text/plain; charset=utf-8",
+      successMessage: "Note written successfully.",
+    });
+  }
+
+  public async writeFile(
+    path: string,
+    content: string,
+    options?: { contentType?: string; successMessage?: string },
+  ): Promise<{ path: string; message: string }> {
     const response = await this.request({
       method: "PUT",
       path: buildVaultPath(path),
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": options?.contentType ?? "text/plain; charset=utf-8",
       },
       body: content,
     });
 
     return {
       path: normalizeVaultPath(path),
-      message: responseMessage(response.body, "Note written successfully."),
+      message: responseMessage(response.body, options?.successMessage ?? "File written successfully."),
     };
   }
 
