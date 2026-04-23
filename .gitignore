@@ -4,3 +4,4 @@ coverage/
 .env
 .codex/
 npm-debug.log*
+request.md
