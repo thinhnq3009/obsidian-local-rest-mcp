@@ -5,3 +5,4 @@ coverage/
 .codex/
 npm-debug.log*
 request.md
+AGENTS.md
