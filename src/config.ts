@@ -39,7 +39,18 @@ const envSchema = z.object({
   MCP_ALLOWED_HOSTS: z.string().optional(),
 });
 
-type CliOverrides = Partial<Record<"MCP_TRANSPORT" | "MCP_HTTP_HOST" | "MCP_HTTP_PORT" | "MCP_HTTP_PATH", string>>;
+type CliOverrides = Partial<
+  Record<
+    | "OBSIDIAN_API_KEY"
+    | "OBSIDIAN_BASE_URL"
+    | "OBSIDIAN_VERIFY_SSL"
+    | "MCP_TRANSPORT"
+    | "MCP_HTTP_HOST"
+    | "MCP_HTTP_PORT"
+    | "MCP_HTTP_PATH",
+    string
+  >
+>;
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv.slice(2)): AppConfig {
   const mergedSource: Record<string, string | undefined> = {
@@ -84,6 +95,16 @@ export function parseCliArgs(argv: string[]): CliOverrides {
       continue;
     }
 
+    if (argument === "--http") {
+      overrides.MCP_TRANSPORT = "http";
+      continue;
+    }
+
+    if (argument === "--stdio") {
+      overrides.MCP_TRANSPORT = "stdio";
+      continue;
+    }
+
     const [rawKey, inlineValue] = argument.slice(2).split("=", 2);
     const nextValue = inlineValue ?? argv[index + 1];
     const value = inlineValue ?? (!nextValue?.startsWith("--") ? nextValue : undefined);
@@ -99,6 +120,15 @@ export function parseCliArgs(argv: string[]): CliOverrides {
     switch (rawKey) {
       case "transport":
         overrides.MCP_TRANSPORT = value;
+        break;
+      case "api-key":
+        overrides.OBSIDIAN_API_KEY = value;
+        break;
+      case "base-url":
+        overrides.OBSIDIAN_BASE_URL = value;
+        break;
+      case "verify-ssl":
+        overrides.OBSIDIAN_VERIFY_SSL = value;
         break;
       case "host":
         overrides.MCP_HTTP_HOST = value;

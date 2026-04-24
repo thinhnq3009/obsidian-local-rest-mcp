@@ -57,6 +57,18 @@ https://127.0.0.1:27124
 npx obsidian-local-rest-mcp
 ```
 
+Run in HTTP mode directly from `npx`:
+
+```bash
+npx obsidian-local-rest-mcp --http
+```
+
+Pass the Obsidian API key directly on the CLI if you do not want to rely on env vars:
+
+```bash
+npx obsidian-local-rest-mcp --http --api-key=your-obsidian-local-rest-api-key
+```
+
 ### Run from source
 
 ```bash
@@ -95,6 +107,8 @@ Notes:
 - `MCP_HTTP_PORT` defaults to `39145`.
 - `MCP_HTTP_PATH` defaults to `/mcp`.
 - `MCP_ALLOWED_HOSTS` is optional and accepts a comma-separated allowlist for HTTP mode.
+- CLI flags override `.env` and shell env values.
+- Supported CLI flags: `--http`, `--stdio`, `--api-key`, `--base-url`, `--verify-ssl`, `--host`, `--port`, `--path`, `--transport`.
 
 See [.env.example](/C:/Users/Admin/Desktop/thinhnq/tools/obs-mcp-server/.env.example:1).
 
@@ -122,10 +136,34 @@ Run the same MCP toolset over Streamable HTTP:
 node dist/index.js --transport=http
 ```
 
+Shorthand CLI also works:
+
+```bash
+npx obsidian-local-rest-mcp --http
+```
+
+Complete one-line startup with explicit Obsidian config:
+
+```bash
+npx obsidian-local-rest-mcp --http --api-key=your-obsidian-local-rest-api-key --base-url=https://127.0.0.1:27124 --verify-ssl=false
+```
+
 Custom bind options:
 
 ```bash
 node dist/index.js --transport=http --host=127.0.0.1 --port=39145 --path=/mcp
+```
+
+The same works with `npx` if you want everything in one command:
+
+```bash
+npx obsidian-local-rest-mcp --http --api-key=your-obsidian-local-rest-api-key --host=127.0.0.1 --port=39145 --path=/mcp
+```
+
+When HTTP mode starts, the server logs the live MCP endpoint to `stderr`, for example:
+
+```text
+[obs-mcp-server] HTTP transport listening at http://127.0.0.1:39145/mcp
 ```
 
 Resulting endpoint:
