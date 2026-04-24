@@ -1,6 +1,6 @@
 # obsidian-local-rest-mcp
 
-`obsidian-local-rest-mcp` is a local MCP server for Codex and other MCP clients. It runs over STDIO and exposes Obsidian tools backed by the [Obsidian Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api).
+`obsidian-local-rest-mcp` is a local MCP server for Codex and other MCP clients. It exposes Obsidian tools backed by the [Obsidian Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api) over either STDIO or Streamable HTTP.
 
 ## What It Does
 
@@ -79,6 +79,10 @@ Set these environment variables:
 OBSIDIAN_API_KEY=your-obsidian-local-rest-api-key
 OBSIDIAN_BASE_URL=https://127.0.0.1:27124
 OBSIDIAN_VERIFY_SSL=false
+MCP_TRANSPORT=stdio
+MCP_HTTP_HOST=127.0.0.1
+MCP_HTTP_PORT=39145
+MCP_HTTP_PATH=/mcp
 ```
 
 Notes:
@@ -86,8 +90,55 @@ Notes:
 - `OBSIDIAN_API_KEY` is required.
 - `OBSIDIAN_BASE_URL` defaults to `https://127.0.0.1:27124`.
 - `OBSIDIAN_VERIFY_SSL` defaults to `false`, which is useful for local self-signed certificates.
+- `MCP_TRANSPORT` defaults to `stdio`.
+- `MCP_HTTP_HOST` defaults to `127.0.0.1`.
+- `MCP_HTTP_PORT` defaults to `39145`.
+- `MCP_HTTP_PATH` defaults to `/mcp`.
+- `MCP_ALLOWED_HOSTS` is optional and accepts a comma-separated allowlist for HTTP mode.
 
 See [.env.example](/C:/Users/Admin/Desktop/thinhnq/tools/obs-mcp-server/.env.example:1).
+
+## Running Modes
+
+### STDIO mode
+
+Default startup remains STDIO:
+
+```bash
+npm run start
+```
+
+You can also force it explicitly:
+
+```bash
+node dist/index.js --transport=stdio
+```
+
+### HTTP mode
+
+Run the same MCP toolset over Streamable HTTP:
+
+```bash
+node dist/index.js --transport=http
+```
+
+Custom bind options:
+
+```bash
+node dist/index.js --transport=http --host=127.0.0.1 --port=39145 --path=/mcp
+```
+
+Resulting endpoint:
+
+```text
+http://127.0.0.1:39145/mcp
+```
+
+For external access, publish the local endpoint with a tunnel such as:
+
+```bash
+ngrok http 39145
+```
 
 ## Codex Configuration
 
@@ -121,6 +172,22 @@ OBSIDIAN_API_KEY = "replace-me"
 OBSIDIAN_BASE_URL = "https://127.0.0.1:27124"
 OBSIDIAN_VERIFY_SSL = "false"
 ```
+
+### HTTP mode for other MCP clients or agents
+
+Start the server in HTTP mode:
+
+```bash
+node dist/index.js --transport=http --host=127.0.0.1 --port=39145 --path=/mcp
+```
+
+Then point the remote MCP client at:
+
+```text
+http://127.0.0.1:39145/mcp
+```
+
+All currently registered tools are exported in HTTP mode as well, including canvas, path, metadata, and frontmatter operations.
 
 ## Example Tool Inputs
 

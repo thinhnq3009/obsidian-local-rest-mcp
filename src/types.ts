@@ -10,6 +10,11 @@ export type AppConfig = {
   obsidianVerifySsl: boolean;
   requestTimeoutMs: number;
   retryCount: number;
+  mcpTransport: "stdio" | "http";
+  mcpHttpHost: string;
+  mcpHttpPort: number;
+  mcpHttpPath: string;
+  mcpAllowedHosts?: string[];
 };
 
 export class ObsidianClientError extends Error {

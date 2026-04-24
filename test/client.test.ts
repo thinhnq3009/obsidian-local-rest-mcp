@@ -9,6 +9,10 @@ const config: AppConfig = {
   obsidianVerifySsl: false,
   requestTimeoutMs: 10_000,
   retryCount: 0,
+  mcpTransport: "stdio",
+  mcpHttpHost: "127.0.0.1",
+  mcpHttpPort: 39145,
+  mcpHttpPath: "/mcp",
 };
 
 describe("vault path helpers", () => {
