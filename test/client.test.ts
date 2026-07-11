@@ -1,19 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { buildVaultPath, encodeVaultSegments, mapRequestError, ObsidianClient, type RequestLike } from "../src/obsidian/client.js";
+import { buildVaultPath, encodeVaultSegments, mapRequestError, LocalRestBackend, type RequestLike } from "../src/obsidian/client.js";
 import { ObsidianClientError, type AppConfig } from "../src/types.js";
+import { makeConfig } from "./helpers.js";
 
-const config: AppConfig = {
+const config: AppConfig = makeConfig({
+  backend: "local-rest",
   obsidianApiKey: "secret",
   obsidianBaseUrl: "https://127.0.0.1:27124",
-  obsidianVerifySsl: false,
-  requestTimeoutMs: 10_000,
-  retryCount: 0,
-  mcpTransport: "stdio",
-  mcpHttpHost: "127.0.0.1",
-  mcpHttpPort: 39145,
-  mcpHttpPath: "/mcp",
-};
+});
 
 describe("vault path helpers", () => {
   it("encodes vault paths safely", () => {
@@ -23,7 +18,7 @@ describe("vault path helpers", () => {
   });
 });
 
-describe("ObsidianClient", () => {
+describe("LocalRestBackend", () => {
   it("sends auth header when listing files", async () => {
     let capturedRequest: Parameters<RequestLike>[0] | undefined;
     const requestMock: RequestLike = (request) => {
@@ -38,7 +33,7 @@ describe("ObsidianClient", () => {
       });
     };
 
-    const client = new ObsidianClient(config, { requestImpl: requestMock });
+    const client = new LocalRestBackend(config, { requestImpl: requestMock });
     const result = await client.listFiles();
 
     expect(capturedRequest?.url.toString()).toBe("https://127.0.0.1:27124/vault/");
@@ -53,7 +48,7 @@ describe("ObsidianClient", () => {
   });
 
   it("maps http failures to ObsidianClientError", async () => {
-    const client = new ObsidianClient(config, {
+    const client = new LocalRestBackend(config, {
       requestImpl: (() => Promise.resolve({
         status: 503,
         statusText: "Service Unavailable",
@@ -88,7 +83,7 @@ describe("ObsidianClient", () => {
       });
     };
 
-    const client = new ObsidianClient(config, { requestImpl: requestMock });
+    const client = new LocalRestBackend(config, { requestImpl: requestMock });
     const result = await client.readNoteMetadata("Notes/Test.md");
 
     expect(capturedRequest?.headers?.Accept).toBe("application/vnd.olrapi.note+json");
@@ -110,7 +105,7 @@ describe("ObsidianClient", () => {
       });
     };
 
-    const client = new ObsidianClient(config, { requestImpl: requestMock });
+    const client = new LocalRestBackend(config, { requestImpl: requestMock });
     await client.patchFrontmatter("Notes/Test.md", "status", "done", "replace", true);
 
     expect(capturedRequest?.headers?.["Content-Type"]).toBe("application/json");
@@ -135,7 +130,7 @@ describe("ObsidianClient", () => {
       });
     };
 
-    const client = new ObsidianClient(config, { requestImpl: requestMock });
+    const client = new LocalRestBackend(config, { requestImpl: requestMock });
     await client.writeFile("Maps/Plan.canvas", "{}", {
       contentType: "application/json; charset=utf-8",
       successMessage: "Canvas written successfully.",
@@ -159,7 +154,7 @@ describe("ObsidianClient", () => {
       });
     };
 
-    const client = new ObsidianClient(config, { requestImpl: requestMock });
+    const client = new LocalRestBackend(config, { requestImpl: requestMock });
     const result = await client.searchAdvanced({ "!==": [{ var: "path" }, null] }, 20);
 
     expect(capturedRequest?.headers?.["Content-Type"]).toBe("application/vnd.olrapi.jsonlogic+json");
