@@ -1,12 +1,26 @@
 import { z } from "zod";
 
 export const patchOperationSchema = z.enum(["append", "prepend", "replace"]);
-
 export type PatchOperation = z.infer<typeof patchOperationSchema>;
 
+export type BackendKind = "filesystem" | "local-rest";
+export type IndexMode = "auto" | "scan" | "indexed";
+export type WatchMode = "auto" | "on" | "off";
+
 export type AppConfig = {
-  obsidianApiKey: string;
-  obsidianBaseUrl: string;
+  backend: BackendKind;
+  vaultPath?: string;
+  readOnly: boolean;
+  readPaths: string[];
+  writePaths: string[];
+  indexMode: IndexMode;
+  watchMode: WatchMode;
+  cacheDir: string;
+  maxFileSizeBytes: number;
+  maxTreeEntries: number;
+  maxSearchResults: number;
+  obsidianApiKey?: string;
+  obsidianBaseUrl?: string;
   obsidianVerifySsl: boolean;
   requestTimeoutMs: number;
   retryCount: number;
@@ -15,21 +29,49 @@ export type AppConfig = {
   mcpHttpPort: number;
   mcpHttpPath: string;
   mcpAllowedHosts?: string[];
+  mcpAuthToken?: string;
 };
 
-export class ObsidianClientError extends Error {
+export type VaultErrorCode =
+  | "INVALID_PATH"
+  | "NOT_FOUND"
+  | "ALREADY_EXISTS"
+  | "READ_ONLY"
+  | "ACCESS_DENIED"
+  | "CONFLICT"
+  | "UNSUPPORTED_CAPABILITY"
+  | "INDEX_ERROR"
+  | "INVALID_QUERY"
+  | "INVALID_MARKDOWN"
+  | "AMBIGUOUS_HEADING"
+  | "HEADING_NOT_FOUND"
+  | "FILE_TOO_LARGE"
+  | "TOOL_ERROR"
+  | "OBSIDIAN_HTTP_ERROR"
+  | "OBSIDIAN_TIMEOUT"
+  | "OBSIDIAN_UNREACHABLE"
+  | "OBSIDIAN_INVALID_RESPONSE"
+  | "OBSIDIAN_UNKNOWN_ERROR";
+
+export class VaultError extends Error {
   public readonly code: string;
   public readonly status: number | undefined;
   public readonly details: unknown;
 
   public constructor(message: string, options: { code: string; status?: number; details?: unknown }) {
     super(message);
-    this.name = "ObsidianClientError";
+    this.name = "VaultError";
     this.code = options.code;
-    if (options.status !== undefined) {
-      this.status = options.status;
-    }
+    this.status = options.status;
     this.details = options.details;
+  }
+}
+
+/** @deprecated Use VaultError. Kept for the Local REST compatibility adapter. */
+export class ObsidianClientError extends VaultError {
+  public constructor(message: string, options: { code: string; status?: number; details?: unknown }) {
+    super(message, options);
+    this.name = "ObsidianClientError";
   }
 }
 
@@ -37,15 +79,22 @@ export const vaultPathSchema = z
   .string()
   .min(1, "path is required")
   .refine((value) => value.trim().length > 0, "path is required")
-  .refine((value) => !normalizeVaultPathInput(value).split("/").some((segment) => segment === ".."), "path must stay inside the vault");
+  .refine((value) => !isUnsafeVaultPathInput(value), "path must stay inside the vault");
 
 export const optionalVaultPathSchema = z
   .string()
   .default("")
-  .refine((value) => !normalizeVaultPathInput(value).split("/").some((segment) => segment === ".."), "path must stay inside the vault");
+  .refine((value) => value === "" || !isUnsafeVaultPathInput(value), "path must stay inside the vault");
 
-export function normalizeVaultPathInput(path: string): string {
-  return path.replace(/\\/g, "/").replace(/^\/+/, "").trim();
+export function normalizeVaultPathInput(input: string): string {
+  return input.replace(/\\/gu, "/").replace(/^\/+|\/+$/gu, "").trim();
+}
+
+function isUnsafeVaultPathInput(input: string): boolean {
+  if (input.includes("\0") || /^[a-zA-Z]:[\\/]/u.test(input) || /^[/\\]{1,2}/u.test(input)) {
+    return true;
+  }
+  return input.replace(/\\/gu, "/").split("/").some((segment) => segment === "..");
 }
 
 export type VaultEntry = {
@@ -59,11 +108,10 @@ export type NoteMetadata = {
   contentType: string | null;
   etag: string | null;
   lastModified: string | null;
+  revision?: string;
 };
 
-export type NoteReadResult = NoteMetadata & {
-  content: string;
-};
+export type NoteReadResult = NoteMetadata & { content: string };
 
 export type SearchResult = {
   path: string;
@@ -83,4 +131,7 @@ export type NoteJsonMetadata = {
   frontmatter: Record<string, unknown>;
   stat: NoteStat | null;
   content?: string;
+  headings?: Array<{ text: string; level: number }>;
+  links?: string[];
+  revision?: string;
 };
