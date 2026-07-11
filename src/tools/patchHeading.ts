@@ -8,7 +8,9 @@ const inputSchema = z.object({
   path: vaultPathSchema.describe("Relative markdown file path inside the vault."),
   heading: z.string().min(1, "heading is required").describe("Heading text to patch."),
   content: z.string().describe("Content to apply to the target heading."),
-  operation: patchOperationSchema.default("append").describe("Patch operation supported by Obsidian Local REST API."),
+  operation: patchOperationSchema.default("append").describe("How to update the selected heading section."),
+  occurrence: z.number().int().min(1).optional().describe("1-based occurrence when multiple headings have the same text."),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest read."),
 });
 
 const outputSchema = z.object({
@@ -16,6 +18,7 @@ const outputSchema = z.object({
   heading: z.string(),
   operation: patchOperationSchema,
   message: z.string(),
+  revision: z.string().optional(),
 });
 
 export const registerPatchHeadingTool: ToolRegistrar = (server, client) => {
@@ -23,13 +26,13 @@ export const registerPatchHeadingTool: ToolRegistrar = (server, client) => {
     "obsidian_patch_heading",
     {
       title: "Patch Obsidian Heading",
-      description: "Patch a specific heading using Obsidian Local REST API PATCH headers.",
+      description: "Patch exactly one Markdown heading section without rewriting unrelated content.",
       inputSchema,
       outputSchema,
     },
-    async ({ path, heading, content, operation }) => {
+    async ({ path, heading, content, operation, occurrence, expected_revision: expectedRevision }) => {
       try {
-        const result = await client.patchHeading(path, heading, content, operation);
+        const result = await client.patchHeading(path, heading, content, operation, { ...(occurrence ? { occurrence } : {}), expectedRevision });
         return successResult(`Patched heading "${heading}" in ${result.path}.`, result);
       } catch (error) {
         return errorResult(error);

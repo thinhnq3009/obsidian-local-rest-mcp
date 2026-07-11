@@ -25,6 +25,10 @@ import { registerUpdateCanvasEdgeTool } from "./updateCanvasEdge.js";
 import { registerUpdateCanvasNodeTool } from "./updateCanvasNode.js";
 import { registerUpdateCanvasTool } from "./updateCanvas.js";
 import { registerWriteNoteTool } from "./writeNote.js";
+import { registerBackendStatusTool } from "./backendStatus.js";
+import { registerCreateFolderTool } from "./createFolder.js";
+import { registerRebuildSearchIndexTool } from "./rebuildSearchIndex.js";
+import { registerVaultHealthTool } from "./vaultHealth.js";
 
 export const toolRegistrars: ToolRegistrar[] = [
   registerListFilesTool,
@@ -40,8 +44,6 @@ export const toolRegistrars: ToolRegistrar[] = [
   registerPatchFrontmatterTool,
   registerSearchTool,
   registerSearchContentAdvancedTool,
-  registerGetActiveFileTool,
-  registerOpenFileTool,
   registerAddCanvasNodeTool,
   registerUpdateCanvasNodeTool,
   registerRemoveCanvasNodeTool,
@@ -53,4 +55,10 @@ export const toolRegistrars: ToolRegistrar[] = [
   registerDeletePathTool,
   registerStatPathTool,
   registerTreeTool,
+  registerCreateFolderTool,
+  registerBackendStatusTool,
+  registerVaultHealthTool,
+  registerRebuildSearchIndexTool,
 ];
+
+export const runtimeToolRegistrars: ToolRegistrar[] = [registerGetActiveFileTool, registerOpenFileTool];

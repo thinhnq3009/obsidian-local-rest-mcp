@@ -17,6 +17,7 @@ const inputSchema = z.object({
   path: canvasPathSchema.describe("Vault-relative .canvas path to update."),
   nodes: canvasNodesSchema.optional().describe("Replace the full nodes array if provided."),
   edges: canvasEdgesSchema.optional().describe("Replace the full edges array if provided."),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest canvas read."),
 });
 
 const outputSchema = z.object({
@@ -25,6 +26,7 @@ const outputSchema = z.object({
   canvas: canvasDocumentSchema,
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
+  revision: z.string().optional(),
 });
 
 const description = [
@@ -42,11 +44,11 @@ export const registerUpdateCanvasTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path, nodes, edges }) => {
+    async ({ path, nodes, edges, expected_revision: expectedRevision }) => {
       try {
         const current = await readCanvasDocument(client, path);
         const canvas = replaceCanvasDocument(current.canvas, canvasDocumentPatchSchema.parse({ nodes, edges }));
-        const result = await writeCanvasDocument(client, path, canvas);
+        const result = await writeCanvasDocument(client, path, canvas, { mode: "replace", expectedRevision });
 
         return successResult(`Updated canvas ${result.path}.`, {
           path: result.path,
@@ -54,6 +56,7 @@ export const registerUpdateCanvasTool: ToolRegistrar = (server, client) => {
           canvas,
           nodeCount: canvas.nodes.length,
           edgeCount: canvas.edges.length,
+          revision: result.revision,
         });
       } catch (error) {
         return errorResult(error);

@@ -6,6 +6,7 @@ import { canvasPathSchema } from "./canvasCommon.js";
 
 const inputSchema = z.object({
   path: canvasPathSchema.describe("Vault-relative .canvas path to delete."),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest canvas read."),
 });
 
 const outputSchema = z.object({
@@ -22,9 +23,9 @@ export const registerDeleteCanvasTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path }) => {
+    async ({ path, expected_revision: expectedRevision }) => {
       try {
-        await client.deletePath(path);
+        await client.deletePath(path, { expectedRevision });
         return successResult(`Deleted canvas ${path}.`, {
           path,
           deleted: true,

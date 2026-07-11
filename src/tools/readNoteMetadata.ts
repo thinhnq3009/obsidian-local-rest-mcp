@@ -19,6 +19,9 @@ const outputSchema = z.object({
       size: z.number().optional(),
     })
     .nullable(),
+  headings: z.array(z.object({ text: z.string(), level: z.number().int() })).optional(),
+  links: z.array(z.string()).optional(),
+  revision: z.string().optional(),
 });
 
 export const registerReadNoteMetadataTool: ToolRegistrar = (server, client) => {

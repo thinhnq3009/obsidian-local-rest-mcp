@@ -21,6 +21,7 @@ export const registerGetActiveFileTool: ToolRegistrar = (server, client) => {
     },
     async () => {
       try {
+        if (!client.getActiveFile) throw new Error("Active file is unsupported by the current backend.");
         const result = await client.getActiveFile();
         const summary = `Read the active Obsidian file${result.path ? ` (${result.path})` : ""}.`;
         return successResult(summary, result);

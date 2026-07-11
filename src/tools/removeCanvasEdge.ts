@@ -7,6 +7,7 @@ import { canvasDocumentSchema, canvasPathSchema, readCanvasDocument, removeCanva
 const inputSchema = z.object({
   path: canvasPathSchema.describe("Vault-relative .canvas path to update."),
   edge_id: z.string().trim().min(1).describe("Existing edge ID to remove."),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest canvas read."),
 });
 
 const outputSchema = z.object({
@@ -16,6 +17,7 @@ const outputSchema = z.object({
   canvas: canvasDocumentSchema,
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
+  revision: z.string().optional(),
 });
 
 export const registerRemoveCanvasEdgeTool: ToolRegistrar = (server, client) => {
@@ -27,11 +29,11 @@ export const registerRemoveCanvasEdgeTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path, edge_id: edgeId }) => {
+    async ({ path, edge_id: edgeId, expected_revision: expectedRevision }) => {
       try {
         const current = await readCanvasDocument(client, path);
         const canvas = removeCanvasEdge(current.canvas, edgeId);
-        const result = await writeCanvasDocument(client, path, canvas);
+        const result = await writeCanvasDocument(client, path, canvas, { mode: "replace", expectedRevision });
 
         return successResult(`Removed canvas edge ${edgeId} from ${result.path}.`, {
           path: result.path,
@@ -40,6 +42,7 @@ export const registerRemoveCanvasEdgeTool: ToolRegistrar = (server, client) => {
           canvas,
           nodeCount: canvas.nodes.length,
           edgeCount: canvas.edges.length,
+          revision: result.revision,
         });
       } catch (error) {
         return errorResult(error);

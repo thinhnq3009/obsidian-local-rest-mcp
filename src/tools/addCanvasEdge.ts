@@ -16,6 +16,7 @@ const inputSchema = z.object({
   edge: canvasEdgeSchema.describe(
     "Canvas edge to add. Example: {\"id\":\"e1\",\"fromNode\":\"n1\",\"fromSide\":\"right\",\"toNode\":\"n2\",\"toSide\":\"left\",\"label\":\"next\"}.",
   ),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest canvas read."),
 });
 
 const outputSchema = z.object({
@@ -25,6 +26,7 @@ const outputSchema = z.object({
   canvas: canvasDocumentSchema,
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
+  revision: z.string().optional(),
 });
 
 export const registerAddCanvasEdgeTool: ToolRegistrar = (server, client) => {
@@ -36,11 +38,11 @@ export const registerAddCanvasEdgeTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path, edge }) => {
+    async ({ path, edge, expected_revision: expectedRevision }) => {
       try {
         const current = await readCanvasDocument(client, path);
         const canvas = addCanvasEdge(current.canvas, edge);
-        const result = await writeCanvasDocument(client, path, canvas);
+        const result = await writeCanvasDocument(client, path, canvas, { mode: "replace", expectedRevision });
 
         return successResult(`Added canvas edge ${edge.id} to ${result.path}.`, {
           path: result.path,
@@ -49,6 +51,7 @@ export const registerAddCanvasEdgeTool: ToolRegistrar = (server, client) => {
           canvas,
           nodeCount: canvas.nodes.length,
           edgeCount: canvas.edges.length,
+          revision: result.revision,
         });
       } catch (error) {
         return errorResult(error);

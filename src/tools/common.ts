@@ -2,10 +2,10 @@ import { z } from "zod";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { ObsidianClient } from "../obsidian/client.js";
-import { ObsidianClientError } from "../types.js";
+import type { VaultBackend } from "../backend/types.js";
+import { VaultError } from "../types.js";
 
-export type ToolRegistrar = (server: McpServer, client: ObsidianClient) => void;
+export type ToolRegistrar = (server: McpServer, backend: VaultBackend) => void;
 
 export const toolErrorSchema = z.object({
   error: z.object({
@@ -24,9 +24,9 @@ export function successResult<T extends Record<string, unknown>>(summary: string
 
 export function errorResult(error: unknown) {
   const normalized =
-    error instanceof ObsidianClientError
+    error instanceof VaultError
       ? error
-      : new ObsidianClientError(error instanceof Error ? error.message : "Unexpected tool error.", {
+      : new VaultError(error instanceof Error ? error.message : "Unexpected tool error.", {
           code: "TOOL_ERROR",
         });
 

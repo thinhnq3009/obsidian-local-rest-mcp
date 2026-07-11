@@ -1,5 +1,5 @@
-import type { ObsidianClient } from "../obsidian/client.js";
-import { ObsidianClientError } from "../types.js";
+import type { VaultBackend } from "../backend/types.js";
+import { VaultError } from "../types.js";
 
 export type TreeNode = {
   path: string;
@@ -45,7 +45,7 @@ export function joinVaultPath(...segments: string[]): string {
 
 export function renameWithinParent(path: string, newName: string): string {
   if (newName.includes("/") || newName.includes("\\")) {
-    throw new ObsidianClientError("new_name must not include path separators.", {
+    throw new VaultError("new_name must not include path separators.", {
       code: "INVALID_RENAME",
     });
   }
@@ -55,7 +55,7 @@ export function renameWithinParent(path: string, newName: string): string {
 }
 
 export async function collectMarkdownTree(
-  client: ObsidianClient,
+  client: VaultBackend,
   rootPath: string,
   maxDepth = Number.POSITIVE_INFINITY,
 ): Promise<CollectedTree> {
@@ -63,7 +63,7 @@ export async function collectMarkdownTree(
 }
 
 export async function collectTree(
-  client: ObsidianClient,
+  client: VaultBackend,
   rootPath: string,
   maxDepth = Number.POSITIVE_INFINITY,
 ): Promise<TreeNode> {
@@ -72,7 +72,7 @@ export async function collectTree(
 }
 
 async function collectTreeInternal(
-  client: ObsidianClient,
+  client: VaultBackend,
   rootPath: string,
   maxDepth: number,
   markdownOnly: boolean,
@@ -88,44 +88,16 @@ async function collectTreeInternal(
   return { tree, folders, files };
 }
 
-export async function detectPathInfo(client: ObsidianClient, path: string): Promise<PathInfo> {
+export async function detectPathInfo(client: VaultBackend, path: string): Promise<PathInfo> {
   const normalized = path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
 
   if (normalized === "") {
     return { exists: true, kind: "folder", path: "" };
   }
 
-  try {
-    await client.readNoteMetadata(normalized);
-    return { exists: true, kind: "file", path: normalized };
-  } catch (error) {
-    if (!isNotFoundError(error)) {
-      throw error;
-    }
-  }
-
-  try {
-    await client.listFiles(normalized);
-    return { exists: true, kind: "folder", path: normalized };
-  } catch (error) {
-    if (isNotFoundError(error)) {
-      return { exists: false, kind: "missing", path: normalized };
-    }
-
-    throw error;
-  }
-}
-
-function isNotFoundError(error: unknown): boolean {
-  if (error instanceof ObsidianClientError) {
-    return error.status === 404;
-  }
-
-  if (typeof error !== "object" || error === null) {
-    return false;
-  }
-
-  return "status" in error && error.status === 404;
+  const stat = await client.statPath(normalized);
+  if (!stat.exists) return { exists: false, kind: "missing", path: normalized };
+  return stat.kind === "file" ? { exists: true, kind: "file", path: normalized } : { exists: true, kind: "folder", path: normalized };
 }
 
 function flattenTree(node: TreeNode, folders: string[], files: string[]) {
@@ -141,7 +113,7 @@ function flattenTree(node: TreeNode, folders: string[], files: string[]) {
 }
 
 async function walk(
-  client: ObsidianClient,
+  client: VaultBackend,
   path: string,
   name: string,
   depth: number,
@@ -167,7 +139,7 @@ async function walk(
     }
 
     if (markdownOnly && !isMarkdownPath(entry.path)) {
-      throw new ObsidianClientError(`Unsupported non-markdown file encountered: ${entry.path}`, {
+      throw new VaultError(`Unsupported non-markdown file encountered: ${entry.path}`, {
         code: "UNSUPPORTED_PATH_CONTENT",
       });
     }

@@ -18,6 +18,7 @@ const inputSchema = z.object({
   updates: canvasNodeUpdateSchema.describe(
     "Partial node updates. Only fields valid for the target node type may be provided; null removes optional fields like color or subpath.",
   ),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest canvas read."),
 });
 
 const outputSchema = z.object({
@@ -27,6 +28,7 @@ const outputSchema = z.object({
   canvas: canvasDocumentSchema,
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
+  revision: z.string().optional(),
 });
 
 export const registerUpdateCanvasNodeTool: ToolRegistrar = (server, client) => {
@@ -39,11 +41,11 @@ export const registerUpdateCanvasNodeTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path, node_id: nodeId, updates }) => {
+    async ({ path, node_id: nodeId, updates, expected_revision: expectedRevision }) => {
       try {
         const current = await readCanvasDocument(client, path);
         const canvas = updateCanvasNode(current.canvas, nodeId, updates);
-        const result = await writeCanvasDocument(client, path, canvas);
+        const result = await writeCanvasDocument(client, path, canvas, { mode: "replace", expectedRevision });
         const node = canvas.nodes.find((candidate) => candidate.id === nodeId);
         if (!node) {
           throw new Error(`Canvas node does not exist after update: ${nodeId}`);
@@ -56,6 +58,7 @@ export const registerUpdateCanvasNodeTool: ToolRegistrar = (server, client) => {
           canvas,
           nodeCount: canvas.nodes.length,
           edgeCount: canvas.edges.length,
+          revision: result.revision,
         });
       } catch (error) {
         return errorResult(error);

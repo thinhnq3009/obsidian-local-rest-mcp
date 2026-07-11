@@ -23,6 +23,7 @@ const inputSchema = z.object({
     .describe("Initial canvas edges. Each edge must point at existing node IDs."),
   open_after_create: z.boolean().default(false).describe("Open the created canvas in Obsidian after writing it."),
   overwrite: z.boolean().default(false).describe("Allow replacing an existing .canvas file."),
+  expected_revision: z.string().optional().describe("Required when overwrite is true."),
 });
 
 const outputSchema = z.object({
@@ -31,6 +32,7 @@ const outputSchema = z.object({
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
   opened: z.boolean(),
+  revision: z.string().optional(),
 });
 
 const description = [
@@ -49,16 +51,17 @@ export const registerCreateCanvasTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path, nodes, edges, open_after_create: openAfterCreate, overwrite }) => {
+    async ({ path, nodes, edges, open_after_create: openAfterCreate, overwrite, expected_revision: expectedRevision }) => {
       try {
         if (!overwrite) {
           await ensureCanvasDoesNotExist(client, path);
         }
 
         const canvas = canvasDocumentSchema.parse({ nodes, edges });
-        const result = await writeCanvasDocument(client, path, canvas);
+        const result = await writeCanvasDocument(client, path, canvas, { mode: overwrite ? "replace" : "create", ...(expectedRevision ? { expectedRevision } : {}) });
 
         if (openAfterCreate) {
+          if (!client.openFile) throw new Error("open_after_create is unsupported by the active backend.");
           await client.openFile(path);
         }
 
@@ -68,6 +71,7 @@ export const registerCreateCanvasTool: ToolRegistrar = (server, client) => {
           nodeCount: canvas.nodes.length,
           edgeCount: canvas.edges.length,
           opened: openAfterCreate,
+          revision: result.revision,
         });
       } catch (error) {
         return errorResult(error);

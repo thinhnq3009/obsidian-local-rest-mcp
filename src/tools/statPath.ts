@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { collectTree, detectPathInfo } from "./pathOperations.js";
+import { collectTree } from "./pathOperations.js";
 import type { ToolRegistrar } from "./common.js";
 import { errorResult, successResult } from "./common.js";
 import { vaultPathSchema } from "../types.js";
@@ -19,6 +19,7 @@ const outputSchema = z.object({
   tagsCount: z.number().int().nonnegative().nullable(),
   frontmatterKeys: z.array(z.string()).nullable(),
   childCount: z.number().int().nonnegative().nullable(),
+  revision: z.string().nullable(),
 });
 
 export const registerStatPathTool: ToolRegistrar = (server, client) => {
@@ -32,8 +33,8 @@ export const registerStatPathTool: ToolRegistrar = (server, client) => {
     },
     async ({ path }) => {
       try {
-        const info = await detectPathInfo(client, path);
-        if (!info.exists) {
+        const stat = await client.statPath(path);
+        if (!stat.exists) {
           return successResult(`Path does not exist: ${path}.`, {
             path,
             exists: false,
@@ -44,27 +45,29 @@ export const registerStatPathTool: ToolRegistrar = (server, client) => {
             tagsCount: null,
             frontmatterKeys: null,
             childCount: null,
+            revision: null,
           });
         }
 
-        if (info.kind === "file") {
-          const metadata = await client.readNoteMetadata(info.path);
-          return successResult(`Inspected file ${info.path}.`, {
-            path: info.path,
+        if (stat.kind === "file") {
+          const metadata = await client.readNoteMetadata(stat.path);
+          return successResult(`Inspected file ${stat.path}.`, {
+            path: stat.path,
             exists: true,
             kind: "file",
-            size: metadata.stat?.size ?? null,
-            ctime: metadata.stat?.ctime ?? null,
-            mtime: metadata.stat?.mtime ?? null,
+            size: stat.size,
+            ctime: stat.ctime,
+            mtime: stat.mtime,
             tagsCount: metadata.tags.length,
             frontmatterKeys: Object.keys(metadata.frontmatter),
             childCount: null,
+            revision: stat.revision,
           });
         }
 
-        const tree = await collectTree(client, info.path, 1);
-        return successResult(`Inspected folder ${info.path}.`, {
-          path: info.path,
+        const tree = await collectTree(client, stat.path, 1);
+        return successResult(`Inspected folder ${stat.path}.`, {
+          path: stat.path,
           exists: true,
           kind: "folder",
           size: null,
@@ -73,6 +76,7 @@ export const registerStatPathTool: ToolRegistrar = (server, client) => {
           tagsCount: null,
           frontmatterKeys: null,
           childCount: tree.children?.length ?? 0,
+          revision: null,
         });
       } catch (error) {
         return errorResult(error);

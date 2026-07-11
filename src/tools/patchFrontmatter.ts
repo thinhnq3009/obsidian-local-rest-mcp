@@ -14,6 +14,7 @@ const inputSchema = z.object({
   value: jsonValueSchema,
   operation: patchOperationSchema.default("replace"),
   create_if_missing: z.boolean().default(true),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest read."),
 });
 
 const outputSchema = z.object({
@@ -21,6 +22,7 @@ const outputSchema = z.object({
   field: z.string(),
   operation: patchOperationSchema,
   message: z.string(),
+  revision: z.string().optional(),
 });
 
 export const registerPatchFrontmatterTool: ToolRegistrar = (server, client) => {
@@ -28,13 +30,13 @@ export const registerPatchFrontmatterTool: ToolRegistrar = (server, client) => {
     "obsidian_patch_frontmatter",
     {
       title: "Patch Obsidian Frontmatter",
-      description: "Patch a single YAML frontmatter field through the Obsidian Local REST API.",
+      description: "Patch a YAML frontmatter field while preserving unrelated fields and comments.",
       inputSchema,
       outputSchema,
     },
-    async ({ path, field, value, operation, create_if_missing: createIfMissing }) => {
+    async ({ path, field, value, operation, create_if_missing: createIfMissing, expected_revision: expectedRevision }) => {
       try {
-        const result = await client.patchFrontmatter(path, field, value, operation, createIfMissing);
+        const result = await client.patchFrontmatter(path, field, value, operation, createIfMissing, expectedRevision);
         return successResult(`Patched frontmatter field "${field}" in ${path}.`, result);
       } catch (error) {
         return errorResult(error);
