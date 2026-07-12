@@ -1,7 +1,7 @@
 {
   "name": "obsidian-local-rest-mcp",
-  "version": "0.3.1",
-  "description": "A local MCP server that exposes Obsidian tools through the Obsidian Local REST API over STDIO or Streamable HTTP.",
+  "version": "1.0.0",
+  "description": "Standalone MCP server for safely reading, writing, searching, and managing Obsidian vaults directly through the filesystem.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,6 +17,8 @@
   "files": [
     "dist",
     "README.md",
+    "MIGRATION.md",
+    "CHANGELOG.md",
     ".env.example"
   ],
   "engines": {
@@ -35,7 +37,9 @@
     "codex",
     "mcp",
     "obsidian",
-    "rest-api",
+    "filesystem",
+    "standalone",
+    "vault",
     "typescript"
   ],
   "author": "",
@@ -50,12 +54,22 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "chokidar": "^4.0.3",
+    "mdast-util-to-string": "^4.0.0",
+    "minisearch": "^7.2.0",
+    "proper-lockfile": "^4.1.2",
+    "remark-frontmatter": "^5.0.0",
+    "remark-parse": "^11.0.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.1.0",
+    "yaml": "^2.9.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/express": "^5.0.6",
     "@types/node": "^24.7.2",
+    "@types/proper-lockfile": "^4.1.4",
     "@vitest/coverage-v8": "^4.1.4",
     "eslint": "^10.2.0",
     "tsx": "^4.21.0",

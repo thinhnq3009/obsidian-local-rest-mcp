@@ -44,12 +44,15 @@ type RawResponse = {
   body: unknown;
 };
 
-export class ObsidianClient {
-  private readonly config: AppConfig;
+export class LocalRestBackend {
+  private readonly config: AppConfig & { obsidianApiKey: string; obsidianBaseUrl: string };
   private readonly requestImpl: RequestLike;
 
   public constructor(config: AppConfig, options?: { requestImpl?: RequestLike }) {
-    this.config = config;
+    if (!config.obsidianApiKey || !config.obsidianBaseUrl) {
+      throw new Error("Local REST backend requires OBSIDIAN_API_KEY and OBSIDIAN_BASE_URL.");
+    }
+    this.config = config as AppConfig & { obsidianApiKey: string; obsidianBaseUrl: string };
     this.requestImpl = options?.requestImpl ?? nodeRequest;
   }
 
@@ -328,6 +331,9 @@ export class ObsidianClient {
     throw mapRequestError(lastError);
   }
 }
+
+/** @deprecated Use LocalRestBackend. */
+export { LocalRestBackend as ObsidianClient };
 
 export function normalizeVaultPath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/+$/, "").trim();

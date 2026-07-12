@@ -21,12 +21,15 @@ async function main() {
     return;
   }
 
-  const { server } = await createServer(config);
+  const { server, application } = await createServer(config);
+  const shutdown = () => { void server.close(); void application.close(); };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
   await server.connect(new StdioServerTransport());
 }
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`[obs-mcp-server] ${message}\n`);
+  process.stderr.write(`[obsidian-vault-mcp] ${message}\n`);
   process.exitCode = 1;
 });

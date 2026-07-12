@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import type { ObsidianClient } from "../obsidian/client.js";
-import { ObsidianClientError, vaultPathSchema } from "../types.js";
+import type { VaultBackend } from "../backend/types.js";
+import { VaultError, vaultPathSchema } from "../types.js";
 
 const nonEmptyString = z.string().trim().min(1);
 const canvasIntegerSchema = z.number().int();
@@ -170,7 +170,7 @@ export const canvasEdgeUpdateSchema = z
     message: "at least one edge field update is required",
   });
 
-export async function readCanvasDocument(client: ObsidianClient, path: string) {
+export async function readCanvasDocument(client: VaultBackend, path: string) {
   const file = await client.readNote(path);
   return {
     path: file.path ?? path,
@@ -179,24 +179,17 @@ export async function readCanvasDocument(client: ObsidianClient, path: string) {
   };
 }
 
-export async function writeCanvasDocument(client: ObsidianClient, path: string, canvas: CanvasDocument) {
+export async function writeCanvasDocument(client: VaultBackend, path: string, canvas: CanvasDocument, options: { mode?: "create" | "replace"; expectedRevision?: string } = {}) {
   return client.writeFile(path, serializeCanvasDocument(canvas), {
     contentType: "application/json; charset=utf-8",
-    successMessage: "Canvas written successfully.",
+    ...(options.mode ? { mode: options.mode } : {}),
+    ...(options.expectedRevision ? { expectedRevision: options.expectedRevision } : {}),
   });
 }
 
-export async function ensureCanvasDoesNotExist(client: ObsidianClient, path: string) {
-  try {
-    await client.readNote(path);
-    throw new Error(`Canvas already exists: ${path}`);
-  } catch (error) {
-    if (isNotFoundError(error)) {
-      return;
-    }
-
-    throw error;
-  }
+export async function ensureCanvasDoesNotExist(client: VaultBackend, path: string) {
+  const stat = await client.statPath(path);
+  if (stat.exists) throw new VaultError(`Canvas already exists: ${path}`, { code: "ALREADY_EXISTS" });
 }
 
 export function parseCanvasDocument(content: string, path: string): CanvasDocument {
@@ -205,7 +198,7 @@ export function parseCanvasDocument(content: string, path: string): CanvasDocume
   try {
     parsed = JSON.parse(content) as unknown;
   } catch (error) {
-    throw new ObsidianClientError(`Invalid JSON in canvas ${path}.`, {
+    throw new VaultError(`Invalid JSON in canvas ${path}.`, {
       code: "OBSIDIAN_INVALID_CANVAS",
       details: error instanceof Error ? error.message : error,
     });
@@ -213,7 +206,7 @@ export function parseCanvasDocument(content: string, path: string): CanvasDocume
 
   const result = canvasDocumentSchema.safeParse(parsed);
   if (!result.success) {
-    throw new ObsidianClientError(`Invalid canvas document at ${path}: ${formatZodIssues(result.error)}`, {
+    throw new VaultError(`Invalid canvas document at ${path}: ${formatZodIssues(result.error)}`, {
       code: "OBSIDIAN_INVALID_CANVAS",
       details: result.error.issues,
     });
@@ -421,10 +414,6 @@ function rejectInvalidUpdateKeys(
       throw new Error(`Field ${key} is not valid for canvas node type ${nodeType}.`);
     }
   }
-}
-
-function isNotFoundError(error: unknown) {
-  return error instanceof ObsidianClientError && error.status === 404;
 }
 
 function formatZodIssues(error: z.ZodError) {

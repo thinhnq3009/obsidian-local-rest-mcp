@@ -18,6 +18,7 @@ const inputSchema = z.object({
   updates: canvasEdgeUpdateSchema.describe(
     "Partial edge updates. Use null to clear optional fields like label, color, or side metadata.",
   ),
+  expected_revision: z.string().min(1).describe("Revision returned by the latest canvas read."),
 });
 
 const outputSchema = z.object({
@@ -27,6 +28,7 @@ const outputSchema = z.object({
   canvas: canvasDocumentSchema,
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
+  revision: z.string().optional(),
 });
 
 export const registerUpdateCanvasEdgeTool: ToolRegistrar = (server, client) => {
@@ -38,11 +40,11 @@ export const registerUpdateCanvasEdgeTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path, edge_id: edgeId, updates }) => {
+    async ({ path, edge_id: edgeId, updates, expected_revision: expectedRevision }) => {
       try {
         const current = await readCanvasDocument(client, path);
         const canvas = updateCanvasEdge(current.canvas, edgeId, updates);
-        const result = await writeCanvasDocument(client, path, canvas);
+        const result = await writeCanvasDocument(client, path, canvas, { mode: "replace", expectedRevision });
         const edge = canvas.edges.find((candidate) => candidate.id === edgeId);
         if (!edge) {
           throw new Error(`Canvas edge does not exist after update: ${edgeId}`);
@@ -55,6 +57,7 @@ export const registerUpdateCanvasEdgeTool: ToolRegistrar = (server, client) => {
           canvas,
           nodeCount: canvas.nodes.length,
           edgeCount: canvas.edges.length,
+          revision: result.revision,
         });
       } catch (error) {
         return errorResult(error);

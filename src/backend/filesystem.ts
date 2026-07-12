@@ -1,0 +1,380 @@
+import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import lockfile from "proper-lockfile";
+
+import type { AppConfig, NoteJsonMetadata, NoteReadResult, PatchOperation, VaultEntry } from "../types.js";
+import { normalizeVaultPathInput, VaultError } from "../types.js";
+import { parseMetadata, patchFrontmatterContent, patchHeadingContent } from "./markdown.js";
+import { VaultSearchService } from "./search.js";
+import type { BackendCapabilities, BackendStatus, PathStat, SearchQuery, SearchResponse, VaultBackend, WriteOptions } from "./types.js";
+
+export class FilesystemVaultBackend implements VaultBackend {
+  public readonly capabilities: BackendCapabilities = { activeFile: false, openFile: false, searchIndex: true, filesystem: true };
+  private vaultRoot = "";
+  private vaultRealPath = "";
+  private searchService: VaultSearchService | undefined;
+  private readonly readPrefixes: string[];
+  private readonly writePrefixes: string[];
+
+  public constructor(private readonly config: AppConfig) {
+    if (!config.vaultPath) throw new VaultError("VAULT_PATH is required for filesystem backend.", { code: "INVALID_PATH" });
+    this.vaultRoot = path.resolve(config.vaultPath);
+    this.readPrefixes = normalizePrefixes(config.readPaths);
+    this.writePrefixes = normalizePrefixes(config.writePaths);
+  }
+
+  public async initialize(): Promise<void> {
+    let stat;
+    try {
+      stat = await fs.stat(this.vaultRoot);
+    } catch {
+      throw new VaultError(`Vault path does not exist: ${this.vaultRoot}`, { code: "NOT_FOUND" });
+    }
+    if (!stat.isDirectory()) throw new VaultError(`Vault path is not a directory: ${this.vaultRoot}`, { code: "INVALID_PATH" });
+    this.vaultRealPath = await fs.realpath(this.vaultRoot);
+    await fs.access(this.vaultRealPath, this.config.readOnly ? constants.R_OK : constants.R_OK | constants.W_OK);
+    const vaultCacheDir = path.join(this.config.cacheDir, createHash("sha256").update(this.vaultRealPath).digest("hex").slice(0, 16));
+    this.searchService = new VaultSearchService(this.vaultRealPath, vaultCacheDir, this.config.indexMode, this.config.watchMode, this.config.maxFileSizeBytes);
+    await this.searchService.initialize();
+  }
+
+  public async close(): Promise<void> {
+    await this.searchService?.close();
+  }
+
+  public status(): Promise<BackendStatus> {
+    const index = this.searchService?.getStatus();
+    return Promise.resolve({
+      backend: "filesystem",
+      vaultPath: this.vaultRealPath || this.vaultRoot,
+      readOnly: this.config.readOnly,
+      capabilities: this.capabilities,
+      indexState: index?.state ?? "disabled",
+      ...(index?.error ? { indexError: index.error } : {}),
+    });
+  }
+
+  public async health(): Promise<{ ok: boolean; checks: Record<string, string> }> {
+    const checks: Record<string, string> = {};
+    try {
+      await fs.access(this.vaultRealPath);
+      checks.vault = "readable";
+      if (!this.config.readOnly) {
+        const probe = path.join(this.config.cacheDir, `.health-${process.pid}`);
+        await fs.mkdir(this.config.cacheDir, { recursive: true });
+        await fs.writeFile(probe, "ok", "utf8");
+        await fs.unlink(probe);
+        checks.cache = "writable";
+      }
+    } catch (error) {
+      checks.error = error instanceof Error ? error.message : String(error);
+    }
+    checks.index = this.searchService?.getStatus().state ?? "disabled";
+    return { ok: checks.error === undefined, checks };
+  }
+
+  public async listFiles(input = ""): Promise<{ entries: VaultEntry[]; root: string }> {
+    const resolved = await this.resolve(input, "read", true);
+    const entries = await fs.readdir(resolved.absolute, { withFileTypes: true });
+    if (entries.length > this.config.maxTreeEntries) throw new VaultError("Directory entry limit exceeded.", { code: "FILE_TOO_LARGE" });
+    return {
+      root: resolved.relative,
+      entries: entries.map((entry) => ({ path: joinVaultPath(resolved.relative, entry.name), name: entry.name, isFolder: entry.isDirectory() })),
+    };
+  }
+
+  public async statPath(input: string): Promise<PathStat> {
+    try {
+      const resolved = await this.resolve(input, "read", true);
+      const stat = await fs.stat(resolved.absolute);
+      return {
+        path: resolved.relative,
+        exists: true,
+        kind: stat.isDirectory() ? "folder" : "file",
+        size: stat.isFile() ? stat.size : null,
+        ctime: stat.ctimeMs,
+        mtime: stat.mtimeMs,
+        revision: stat.isFile() ? await revisionForFile(resolved.absolute, this.config.maxFileSizeBytes) : null,
+      };
+    } catch (error) {
+      if (error instanceof VaultError && error.code === "NOT_FOUND") return { path: normalizeVaultPathInput(input), exists: false, kind: "missing", size: null, ctime: null, mtime: null, revision: null };
+      throw error;
+    }
+  }
+
+  public async readNote(input: string): Promise<NoteReadResult> {
+    const resolved = await this.resolve(input, "read", true);
+    const stat = await fs.stat(resolved.absolute);
+    if (!stat.isFile()) throw new VaultError(`Path is not a file: ${resolved.relative}`, { code: "INVALID_PATH" });
+    if (stat.size > this.config.maxFileSizeBytes) throw new VaultError(`File exceeds configured size limit: ${resolved.relative}`, { code: "FILE_TOO_LARGE" });
+    const content = await fs.readFile(resolved.absolute, "utf8");
+    return {
+      path: resolved.relative,
+      content,
+      contentType: contentTypeFor(resolved.relative),
+      etag: null,
+      lastModified: stat.mtime.toUTCString(),
+      revision: revisionForContent(content),
+    };
+  }
+
+  public writeNote(input: string, content: string, options?: WriteOptions) {
+    return this.writeFile(input, content, { contentType: "text/markdown; charset=utf-8", ...options });
+  }
+
+  public async writeFile(input: string, content: string, options: WriteOptions = {}) {
+    if (Buffer.byteLength(content, "utf8") > this.config.maxFileSizeBytes) throw new VaultError("Content exceeds configured file size limit.", { code: "FILE_TOO_LARGE" });
+    const resolved = await this.resolve(input, "write", false);
+    return this.withPathLock(resolved.relative, async () => {
+      const existing = await readExisting(resolved.absolute, this.config.maxFileSizeBytes);
+      const mode = options.mode ?? "create";
+      if (mode === "create" && existing) throw new VaultError(`Path already exists: ${resolved.relative}`, { code: "ALREADY_EXISTS" });
+      if (mode === "replace") {
+        if (!existing) throw new VaultError(`Path does not exist: ${resolved.relative}`, { code: "NOT_FOUND" });
+        requireRevision(options.expectedRevision, existing.revision);
+      }
+      await atomicWrite(resolved.absolute, content, existing?.mode);
+      return { path: resolved.relative, message: existing ? "File replaced successfully." : "File created successfully.", revision: revisionForContent(content) };
+    });
+  }
+
+  public async appendToNote(input: string, content: string, expectedRevision?: string) {
+    return this.updateTextFile(input, expectedRevision, (current) => current + content, "Content appended successfully.");
+  }
+
+  public async createFolder(input: string): Promise<{ path: string; created: boolean }> {
+    const resolved = await this.resolve(input, "write", false);
+    return this.withPathLock(resolved.relative, async () => {
+      try {
+        const created = await fs.mkdir(resolved.absolute, { recursive: true });
+        return { path: resolved.relative, created: created !== undefined };
+      } catch (error) {
+        if (isCode(error, "EEXIST")) return { path: resolved.relative, created: false };
+        throw mapFsError(error, resolved.relative);
+      }
+    });
+  }
+
+  public async deletePath(input: string, options: { recursive?: boolean; expectedRevision?: string } = {}): Promise<void> {
+    const resolved = await this.resolve(input, "write", true);
+    await this.withPathLock(resolved.relative, async () => {
+      const stat = await fs.stat(resolved.absolute);
+      if (stat.isFile()) {
+        const revision = await revisionForFile(resolved.absolute, this.config.maxFileSizeBytes);
+        requireRevision(options.expectedRevision, revision);
+        await fs.unlink(resolved.absolute);
+      } else {
+        if (!options.recursive) throw new VaultError("Folder deletion requires recursive=true.", { code: "ACCESS_DENIED" });
+        await fs.rm(resolved.absolute, { recursive: true, force: false });
+      }
+    });
+  }
+
+  public async movePath(sourceInput: string, destinationInput: string, options: { overwrite?: boolean; expectedRevision?: string; expectedDestinationRevision?: string } = {}) {
+    const source = await this.resolve(sourceInput, "write", true);
+    const destination = await this.resolve(destinationInput, "write", false);
+    return this.withPathLock(`${source.relative}->${destination.relative}`, async () => {
+      const sourceStat = await fs.stat(source.absolute);
+      if (sourceStat.isFile()) requireRevision(options.expectedRevision, await revisionForFile(source.absolute, this.config.maxFileSizeBytes));
+      const destinationExists = await exists(destination.absolute);
+      if (destinationExists && !options.overwrite) throw new VaultError(`Destination already exists: ${destination.relative}`, { code: "ALREADY_EXISTS" });
+      if (destinationExists && options.overwrite) {
+        const destinationStat = await fs.stat(destination.absolute);
+        if (!destinationStat.isFile()) throw new VaultError("Overwriting a destination folder is not supported.", { code: "ACCESS_DENIED" });
+        requireRevision(options.expectedDestinationRevision, await revisionForFile(destination.absolute, this.config.maxFileSizeBytes));
+      }
+      await fs.mkdir(path.dirname(destination.absolute), { recursive: true });
+      const movedFiles = sourceStat.isDirectory() ? await countFiles(source.absolute, this.config.maxTreeEntries) : 1;
+      await fs.rename(source.absolute, destination.absolute);
+      return { sourcePath: source.relative, destinationPath: destination.relative, kind: sourceStat.isDirectory() ? "folder" as const : "file" as const, movedFiles };
+    });
+  }
+
+  public async readNoteMetadata(input: string): Promise<NoteJsonMetadata> {
+    const note = await this.readNote(input);
+    const metadata = parseMetadata(note.content);
+    const stat = await fs.stat((await this.resolve(input, "read", true)).absolute);
+    return { path: note.path ?? normalizeVaultPathInput(input), ...metadata, stat: { ctime: stat.ctimeMs, mtime: stat.mtimeMs, size: stat.size }, ...(note.revision ? { revision: note.revision } : {}) };
+  }
+
+  public async patchHeading(input: string, heading: string, content: string, operation: PatchOperation, options: { occurrence?: number; expectedRevision?: string } = {}) {
+    const result = await this.updateTextFile(input, options.expectedRevision, (current) => patchHeadingContent(current, heading, content, operation, options.occurrence), "Heading patched successfully.");
+    return { ...result, heading, operation };
+  }
+
+  public async patchFrontmatter(input: string, field: string, value: unknown, operation: PatchOperation, createIfMissing: boolean, expectedRevision?: string) {
+    const result = await this.updateTextFile(input, expectedRevision, (current) => patchFrontmatterContent(current, field, value, operation, createIfMissing), "Frontmatter patched successfully.");
+    return { ...result, field, operation };
+  }
+
+  public async search(query: SearchQuery): Promise<SearchResponse> {
+    return this.searchService!.search({ ...query, limit: Math.min(query.limit, this.config.maxSearchResults) });
+  }
+
+  public rebuildSearchIndex() {
+    return this.searchService!.rebuild();
+  }
+
+  private async updateTextFile(input: string, expectedRevision: string | undefined, transform: (content: string) => string, message: string) {
+    const resolved = await this.resolve(input, "write", true);
+    return this.withPathLock(resolved.relative, async () => {
+      const existing = await readExisting(resolved.absolute, this.config.maxFileSizeBytes);
+      if (!existing) throw new VaultError(`Path does not exist: ${resolved.relative}`, { code: "NOT_FOUND" });
+      requireRevision(expectedRevision, existing.revision);
+      const next = transform(existing.content);
+      await atomicWrite(resolved.absolute, next, existing.mode);
+      return { path: resolved.relative, message, revision: revisionForContent(next) };
+    });
+  }
+
+  private async resolve(input: string, access: "read" | "write", mustExist: boolean): Promise<{ relative: string; absolute: string }> {
+    if (input.includes("\0") || path.isAbsolute(input) || /^[a-zA-Z]:[\\/]/u.test(input) || /^[/\\]{2}/u.test(input)) throw new VaultError("Absolute and UNC paths are not allowed.", { code: "INVALID_PATH" });
+    const relative = normalizeVaultPathInput(input);
+    if (relative.split("/").some((part) => part === "..")) throw new VaultError("Path traversal is not allowed.", { code: "INVALID_PATH" });
+    this.assertAllowed(relative, access);
+    const absolute = path.resolve(this.vaultRealPath || this.vaultRoot, ...relative.split("/").filter(Boolean));
+    assertInside(this.vaultRealPath || this.vaultRoot, absolute);
+    const existingAncestor = await nearestExisting(absolute);
+    const ancestorRealPath = await fs.realpath(existingAncestor);
+    assertInside(this.vaultRealPath || this.vaultRoot, ancestorRealPath);
+    const canonicalCandidate = path.resolve(ancestorRealPath, path.relative(existingAncestor, absolute));
+    assertInside(this.vaultRealPath || this.vaultRoot, canonicalCandidate);
+    this.assertAllowed(normalizeVaultPathInput(path.relative(this.vaultRealPath || this.vaultRoot, canonicalCandidate)), access);
+    if (mustExist && !(await exists(absolute))) throw new VaultError(`Path does not exist: ${relative}`, { code: "NOT_FOUND" });
+    if (await exists(absolute)) assertInside(this.vaultRealPath || this.vaultRoot, await fs.realpath(absolute));
+    return { relative, absolute };
+  }
+
+  private assertAllowed(relative: string, access: "read" | "write"): void {
+    if (access === "write" && this.config.readOnly) throw new VaultError("Vault is in read-only mode.", { code: "READ_ONLY" });
+    const prefixes = access === "read" ? this.readPrefixes : this.writePrefixes;
+    if (prefixes.length > 0 && !prefixes.some((prefix) => relative === prefix || relative.startsWith(`${prefix}/`))) throw new VaultError(`Path is outside configured ${access} scope: ${relative}`, { code: "ACCESS_DENIED" });
+  }
+
+  private async withPathLock<T>(relative: string, callback: () => Promise<T>): Promise<T> {
+    const lockDir = path.join(this.config.cacheDir, "locks");
+    await fs.mkdir(lockDir, { recursive: true });
+    const target = path.join(lockDir, createHash("sha256").update(`${this.vaultRealPath}:${relative}`).digest("hex"));
+    await fs.writeFile(target, "", { flag: "a" });
+    const release = await lockfile.lock(target, { retries: { retries: 20, minTimeout: 25, maxTimeout: 250 }, stale: 15_000, update: 5_000, realpath: true });
+    try {
+      return await callback();
+    } finally {
+      await release();
+    }
+  }
+}
+
+function normalizePrefixes(prefixes: string[]): string[] {
+  return prefixes.map(normalizeVaultPathInput).filter(Boolean);
+}
+
+function requireRevision(expected: string | undefined, actual: string): void {
+  if (!expected) throw new VaultError("expected_revision is required when modifying an existing file.", { code: "CONFLICT", details: { actualRevision: actual } });
+  if (expected !== actual) throw new VaultError("File changed since it was read.", { code: "CONFLICT", details: { expectedRevision: expected, actualRevision: actual } });
+}
+
+async function atomicWrite(destination: string, content: string, mode?: number): Promise<void> {
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  const temporary = path.join(path.dirname(destination), `.obsidian-vault-mcp-${randomUUID()}.tmp`);
+  const handle = await fs.open(temporary, "wx", mode ?? 0o600);
+  try {
+    await handle.writeFile(content, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await fs.rename(temporary, destination);
+  } catch (error) {
+    await fs.unlink(temporary).catch(() => undefined);
+    throw mapFsError(error, destination);
+  }
+}
+
+async function readExisting(absolute: string, maxFileSizeBytes: number): Promise<{ content: string; revision: string; mode: number } | undefined> {
+  try {
+    const stat = await fs.stat(absolute);
+    if (!stat.isFile()) throw new VaultError("Target is not a file.", { code: "INVALID_PATH" });
+    if (stat.size > maxFileSizeBytes) throw new VaultError("File exceeds configured size limit.", { code: "FILE_TOO_LARGE" });
+    const content = await fs.readFile(absolute, "utf8");
+    return { content, revision: revisionForContent(content), mode: stat.mode };
+  } catch (error) {
+    if (isCode(error, "ENOENT")) return undefined;
+    throw error;
+  }
+}
+
+function revisionForContent(content: string): string {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+async function revisionForFile(absolute: string, maxFileSizeBytes: number): Promise<string> {
+  const existing = await readExisting(absolute, maxFileSizeBytes);
+  if (!existing) throw new VaultError("File does not exist.", { code: "NOT_FOUND" });
+  return existing.revision;
+}
+
+function assertInside(root: string, candidate: string): void {
+  const relative = path.relative(root, candidate);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return;
+  throw new VaultError("Resolved path escapes the vault.", { code: "INVALID_PATH" });
+}
+
+async function nearestExisting(candidate: string): Promise<string> {
+  let current = candidate;
+  while (!(await exists(current))) {
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return current;
+}
+
+async function exists(candidate: string): Promise<boolean> {
+  try { await fs.lstat(candidate); return true; } catch (error) { if (isCode(error, "ENOENT")) return false; throw error; }
+}
+
+async function countFiles(directory: string, limit: number): Promise<number> {
+  let count = 0;
+  const walk = async (current: string) => {
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+      if (entry.isDirectory()) await walk(path.join(current, entry.name));
+      else count += 1;
+      if (count > limit) throw new VaultError("Tree entry limit exceeded.", { code: "FILE_TOO_LARGE" });
+    }
+  };
+  await walk(directory);
+  return count;
+}
+
+function joinVaultPath(...segments: string[]): string {
+  return segments.filter(Boolean).join("/").replace(/\\/gu, "/");
+}
+
+function contentTypeFor(relative: string): string {
+  if (relative.toLowerCase().endsWith(".md")) return "text/markdown; charset=utf-8";
+  if (relative.toLowerCase().endsWith(".canvas")) return "application/json; charset=utf-8";
+  return "text/plain; charset=utf-8";
+}
+
+function isCode(error: unknown, code: string): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === code);
+}
+
+function mapFsError(error: unknown, target: string): VaultError {
+  if (error instanceof VaultError) return error;
+  if (isCode(error, "ENOENT")) return new VaultError(`Path does not exist: ${target}`, { code: "NOT_FOUND" });
+  if (isCode(error, "EACCES") || isCode(error, "EPERM")) return new VaultError(`Access denied: ${target}`, { code: "ACCESS_DENIED" });
+  return new VaultError(error instanceof Error ? error.message : "Filesystem operation failed.", { code: "TOOL_ERROR" });
+}
+
+export function defaultCacheDir(): string {
+  if (process.platform === "win32") return path.join(process.env.LOCALAPPDATA ?? os.tmpdir(), "obsidian-vault-mcp");
+  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Caches", "obsidian-vault-mcp");
+  return path.join(process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), ".cache"), "obsidian-vault-mcp");
+}

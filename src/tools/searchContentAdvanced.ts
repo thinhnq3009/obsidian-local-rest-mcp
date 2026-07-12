@@ -3,100 +3,45 @@ import { z } from "zod";
 import type { ToolRegistrar } from "./common.js";
 import { errorResult, successResult } from "./common.js";
 
+const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(jsonValueSchema), z.record(z.string(), jsonValueSchema)]));
+
 const inputSchema = z.object({
   query: z.string().optional(),
   folder: z.string().optional(),
   tag: z.string().optional(),
-  regex: z.string().optional(),
+  regex: z.string().max(256).optional(),
+  frontmatter: z.record(z.string(), jsonValueSchema).optional(),
   case_sensitive: z.boolean().default(false),
   limit: z.number().int().min(1).max(50).default(20),
+  cursor: z.string().optional(),
   sort: z.enum(["relevance", "path"]).default("relevance"),
 });
 
 const outputSchema = z.object({
-  results: z.array(
-    z.object({
-      path: z.string(),
-      score: z.number().optional(),
-      snippet: z.string().optional(),
-    }),
-  ),
+  results: z.array(z.object({ path: z.string(), score: z.number().optional(), snippet: z.string().optional() })),
+  nextCursor: z.string().optional(),
 });
 
-export const registerSearchContentAdvancedTool: ToolRegistrar = (server, client) => {
+export const registerSearchContentAdvancedTool: ToolRegistrar = (server, backend) => {
   server.registerTool(
     "obsidian_search_content_advanced",
     {
-      title: "Advanced Obsidian Search",
-      description: "Search note content and metadata using JSON Logic filters over the Local REST API.",
+      title: "Advanced Vault Search",
+      description: "Search note content, paths, tags, frontmatter, and bounded regular expressions without requiring Obsidian.",
       inputSchema,
       outputSchema,
     },
-    async ({ query, folder, tag, regex, case_sensitive: caseSensitive, limit, sort }) => {
+    async ({ query, folder, tag, regex, frontmatter, case_sensitive: caseSensitive, limit, cursor, sort }) => {
       try {
-        const logic = buildJsonLogic({
-          ...(query !== undefined ? { query } : {}),
-          ...(folder !== undefined ? { folder } : {}),
-          ...(tag !== undefined ? { tag } : {}),
-          ...(regex !== undefined ? { regex } : {}),
-          caseSensitive,
+        const result = await backend.search({
+          ...(query !== undefined ? { query } : {}), ...(folder !== undefined ? { folder } : {}), ...(tag !== undefined ? { tag } : {}),
+          ...(regex !== undefined ? { regex } : {}), ...(frontmatter !== undefined ? { frontmatter } : {}), caseSensitive, limit,
+          ...(cursor !== undefined ? { cursor } : {}), sort,
         });
-        const { results } = await client.searchAdvanced(logic, limit);
-        const sortedResults =
-          sort === "path" ? [...results].sort((left, right) => left.path.localeCompare(right.path)) : results;
-
-        return successResult(`Found ${sortedResults.length} advanced search result${sortedResults.length === 1 ? "" : "s"}.`, {
-          results: sortedResults,
-        });
+        return successResult(`Found ${result.results.length} advanced search result${result.results.length === 1 ? "" : "s"}.`, result);
       } catch (error) {
         return errorResult(error);
       }
     },
   );
 };
-
-function buildJsonLogic(input: {
-  query?: string;
-  folder?: string;
-  tag?: string;
-  regex?: string;
-  caseSensitive: boolean;
-}) {
-  const clauses: Record<string, unknown>[] = [];
-
-  if (input.query?.trim()) {
-    clauses.push({
-      regexp: [buildRegexPattern(input.query, input.caseSensitive), { var: "content" }],
-    });
-  }
-
-  if (input.regex?.trim()) {
-    clauses.push({
-      regexp: [input.regex, { var: "content" }],
-    });
-  }
-
-  if (input.folder?.trim()) {
-    const escaped = escapeRegex(input.folder.replace(/\\/g, "/").replace(/^\/+|\/+$/g, ""));
-    clauses.push({
-      regexp: [`^${escaped}(?:/|$)`, { var: "path" }],
-    });
-  }
-
-  if (input.tag?.trim()) {
-    clauses.push({
-      in: [input.tag.replace(/^#/, ""), { var: "tags" }],
-    });
-  }
-
-  return clauses.length === 0 ? { "!==": [{ var: "path" }, null] } : { and: clauses };
-}
-
-function buildRegexPattern(query: string, caseSensitive: boolean): string {
-  const escaped = escapeRegex(query);
-  return caseSensitive ? escaped : `(?i)${escaped}`;
-}
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}

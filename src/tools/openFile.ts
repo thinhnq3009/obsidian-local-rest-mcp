@@ -24,6 +24,7 @@ export const registerOpenFileTool: ToolRegistrar = (server, client) => {
     },
     async ({ path }) => {
       try {
+        if (!client.openFile) throw new Error("Open file is unsupported by the current backend.");
         const result = await client.openFile(path);
         return successResult(`Opened ${result.path} in Obsidian.`, result);
       } catch (error) {

@@ -14,6 +14,7 @@ const outputSchema = z.object({
   contentType: z.string().nullable(),
   etag: z.string().nullable(),
   lastModified: z.string().nullable(),
+  revision: z.string().optional(),
   nodeCount: z.number().int().nonnegative(),
   edgeCount: z.number().int().nonnegative(),
 });
@@ -39,6 +40,7 @@ export const registerReadCanvasTool: ToolRegistrar = (server, client) => {
           contentType: result.file.contentType,
           etag: result.file.etag,
           lastModified: result.file.lastModified,
+          revision: result.file.revision,
           nodeCount: result.canvas.nodes.length,
           edgeCount: result.canvas.edges.length,
         });

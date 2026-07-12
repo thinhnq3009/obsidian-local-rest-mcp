@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ObsidianClient } from "../src/obsidian/client.js";
+import type { VaultBackend } from "../src/backend/types.js";
 import {
   addCanvasEdge,
   addCanvasNode,
@@ -155,7 +155,7 @@ describe("canvas tool metadata", () => {
   it("describes JSON Canvas format in the create tool", () => {
     const registerTool = vi.fn();
     const fakeServer = { registerTool } as unknown as { registerTool: typeof registerTool };
-    const fakeClient = {} as ObsidianClient;
+    const fakeClient = {} as VaultBackend;
 
     registerCreateCanvasTool(fakeServer as never, fakeClient);
 

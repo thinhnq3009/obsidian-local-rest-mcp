@@ -14,6 +14,7 @@ const outputSchema = z.object({
   contentType: z.string().nullable(),
   etag: z.string().nullable(),
   lastModified: z.string().nullable(),
+  revision: z.string().optional(),
 });
 
 export const registerReadNoteTool: ToolRegistrar = (server, client) => {
