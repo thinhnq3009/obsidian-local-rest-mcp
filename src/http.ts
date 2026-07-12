@@ -18,7 +18,7 @@ export async function startHttpServer(config: AppConfig, options: { createApplic
       response.status(401).json({ jsonrpc: "2.0", error: { code: -32001, message: "Unauthorized" }, id: null });
       return;
     }
-    const server = createMcpServer(application.backend);
+    const server = createMcpServer(application.backend, { colorfulLogs: config.colorfulLogs });
     const transport = new StreamableHTTPServerTransport();
     response.on("close", () => { void transport.close(); void server.close(); });
     try {
@@ -38,6 +38,13 @@ export async function startHttpServer(config: AppConfig, options: { createApplic
   });
   const address = server.address();
   const port = typeof address === "object" && address ? address.port : config.mcpHttpPort;
-  process.stderr.write(`[obsidian-vault-mcp] HTTP transport listening at http://${config.mcpHttpHost}:${String(port)}${config.mcpHttpPath}\n`);
+  const endpoint = `http://${config.mcpHttpHost}:${String(port)}${config.mcpHttpPath}`;
+  process.stderr.write(`${httpLogSegment("[obsidian-vault-mcp]", "cyan", config.colorfulLogs)} ${httpLogSegment("HTTP transport listening", "green", config.colorfulLogs)} at ${httpLogSegment(endpoint, "yellow", config.colorfulLogs)}\n`);
   return server;
+}
+
+function httpLogSegment(value: string, color: "cyan" | "green" | "yellow", enabled: boolean): string {
+  if (!enabled) return value;
+  const codes = { cyan: 36, green: 32, yellow: 33 } as const;
+  return `\u001B[${String(codes[color])}m${value}\u001B[0m`;
 }

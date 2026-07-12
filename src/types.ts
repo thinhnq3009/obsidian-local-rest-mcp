@@ -25,6 +25,7 @@ export type AppConfig = {
   requestTimeoutMs: number;
   retryCount: number;
   mcpTransport: "stdio" | "http";
+  colorfulLogs: boolean;
   mcpHttpHost: string;
   mcpHttpPort: number;
   mcpHttpPath: string;

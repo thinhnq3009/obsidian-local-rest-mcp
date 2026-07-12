@@ -34,7 +34,7 @@ export const registerSearchTool: ToolRegistrar = (server, client) => {
       try {
         const result = await client.search({ query, limit, ...(cursor ? { cursor } : {}) });
         const summary = `Found ${result.results.length} search result${result.results.length === 1 ? "" : "s"} for "${query}".`;
-        return successResult(summary, result);
+        return successResult(summary, { query, ...result });
       } catch (error) {
         return errorResult(error);
       }

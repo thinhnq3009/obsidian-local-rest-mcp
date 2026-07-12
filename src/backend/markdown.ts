@@ -105,10 +105,9 @@ export function patchFrontmatterContent(content: string, field: string, value: u
   const exists = document.hasIn(field.split("."));
   if (!exists && !createIfMissing) throw new VaultError(`Frontmatter field not found: ${field}`, { code: "NOT_FOUND" });
   const path = field.split(".");
-  const current: unknown = document.getIn(path);
+  const current = toPlainYamlValue(document.getIn(path));
   if (operation === "replace" || current === undefined) document.setIn(path, value);
-  else if (operation === "append") document.setIn(path, Array.isArray(current) ? [...(current as unknown[]), value] : `${valueToText(current)}${valueToText(value)}`);
-  else document.setIn(path, Array.isArray(current) ? [value, ...(current as unknown[])] : `${valueToText(value)}${valueToText(current)}`);
+  else document.setIn(path, patchFrontmatterValue(current, value, operation));
   const yaml = document.toString({ lineWidth: 0 }).trimEnd().replace(/\n/gu, newline);
   const block = `---${newline}${yaml}${newline}---${newline}`;
   return bom + (match ? block + source.slice(match[0].length) : block + source);
@@ -122,4 +121,30 @@ function valueToText(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
   return JSON.stringify(value);
+}
+
+function patchFrontmatterValue(current: unknown, value: unknown, operation: Exclude<PatchOperation, "replace">): unknown {
+  if (Array.isArray(current)) {
+    const currentItems = current as unknown[];
+    const incomingItems = Array.isArray(value) ? (value as unknown[]) : [value];
+    return operation === "append" ? [...currentItems, ...incomingItems] : [...incomingItems, ...currentItems];
+  }
+
+  if (isScalar(current) && isScalar(value)) {
+    return operation === "append" ? `${valueToText(current)}${valueToText(value)}` : `${valueToText(value)}${valueToText(current)}`;
+  }
+
+  throw new VaultError("Frontmatter append/prepend requires an array or scalar field with a compatible value.", { code: "INVALID_MARKDOWN" });
+}
+
+function isScalar(value: unknown): value is string | number | boolean | null | undefined {
+  return value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function toPlainYamlValue(value: unknown): unknown {
+  if (value && typeof value === "object" && "toJSON" in value && typeof value.toJSON === "function") {
+    return (value as { toJSON: () => unknown }).toJSON();
+  }
+
+  return value;
 }

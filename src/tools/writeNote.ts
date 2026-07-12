@@ -8,6 +8,7 @@ const inputSchema = z.object({
   path: vaultPathSchema.describe("Relative markdown file path inside the vault."),
   content: z.string().describe("Full note content to write."),
   mode: z.enum(["create", "replace"]).default("create").describe("Create a new note or replace an existing note."),
+  overwrite: z.boolean().optional().describe("Compatibility alias for mode=replace."),
   expected_revision: z.string().optional().describe("Required when mode is replace."),
 });
 
@@ -26,9 +27,9 @@ export const registerWriteNoteTool: ToolRegistrar = (server, client) => {
       inputSchema,
       outputSchema,
     },
-    async ({ path, content, mode, expected_revision: expectedRevision }) => {
+    async ({ path, content, mode, overwrite, expected_revision: expectedRevision }) => {
       try {
-        const result = await client.writeNote(path, content, { mode, ...(expectedRevision ? { expectedRevision } : {}) });
+        const result = await client.writeNote(path, content, { mode: overwrite ? "replace" : mode, ...(expectedRevision ? { expectedRevision } : {}) });
         return successResult(`Wrote ${result.path}.`, result);
       } catch (error) {
         return errorResult(error);

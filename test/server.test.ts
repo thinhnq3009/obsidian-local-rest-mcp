@@ -62,4 +62,34 @@ describe("createMcpServer", () => {
     expect(logLine).toMatch(/ ok \d+ms/u);
     expect(logLine).toMatch(/request=\d+/u);
   });
+
+  it("colorizes tool logs when enabled", async () => {
+    const vault = await fs.mkdtemp(path.join(os.tmpdir(), "obsidian-vault-mcp-server-"));
+    tempDirs.push(vault);
+    await fs.mkdir(path.join(vault, ".obsidian"));
+    const application = await createApplication(makeConfig({ vaultPath: vault, watchMode: "off", indexMode: "scan" }));
+    const server = createMcpServer(application.backend, { colorfulLogs: true });
+    const client = new Client({ name: "server-test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const writes: string[] = [];
+    const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    });
+
+    try {
+      await server.connect(serverTransport);
+      await client.connect(clientTransport);
+      await client.callTool({ name: "obsidian_backend_status", arguments: {} });
+    } finally {
+      await client.close();
+      await server.close();
+      await application.close();
+      writeSpy.mockRestore();
+    }
+
+    const logLine = writes.find((line) => line.includes("tool="));
+    expect(logLine).toContain("\u001B[");
+    expect(logLine).toContain("obsidian_backend_status");
+  });
 });

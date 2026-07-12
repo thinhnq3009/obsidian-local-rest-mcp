@@ -22,6 +22,7 @@ describe("loadConfig", () => {
     expect(config.indexMode).toBe("auto");
     expect(config.watchMode).toBe("auto");
     expect(config.mcpTransport).toBe("stdio");
+    expect(config.colorfulLogs).toBe(false);
   });
 
   it("requires only vault path in filesystem mode", () => {
@@ -118,6 +119,11 @@ describe("parseCliArgs", () => {
 
   it("supports compatibility and transport flags", () => {
     expect(parseCliArgs(["--backend=local-rest", "--api-key", "abc", "--http", "--port=9999"])).toEqual({ BACKEND: "local-rest", OBSIDIAN_API_KEY: "abc", MCP_TRANSPORT: "http", MCP_HTTP_PORT: "9999" });
+  });
+
+  it("supports colorful log flags", () => {
+    expect(parseCliArgs(["--colorful"])).toEqual({ COLORFUL_LOGS: "true" });
+    expect(loadConfig({ VAULT_PATH: "." }, ["--colorful"]).colorfulLogs).toBe(true);
   });
 });
 

@@ -13,6 +13,10 @@ import {
 } from "../src/tools/canvasCommon.js";
 import { registerCreateCanvasTool } from "../src/tools/createCanvas.js";
 
+type ToolResult = { structuredContent?: Record<string, unknown> };
+type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>;
+type RegisterToolMock = ReturnType<typeof vi.fn> & { mock: { calls: Array<[unknown, unknown, ToolHandler]> } };
+
 describe("canvasPathSchema", () => {
   it("requires a .canvas suffix", () => {
     expect(() => canvasPathSchema.parse("Maps/Plan.md")).toThrow(/\.canvas/i);
@@ -169,5 +173,28 @@ describe("canvas tool metadata", () => {
     expect(metadata.description).toContain("JSON Canvas");
     expect(metadata.description).toContain("nodes and edges");
     expect(metadata.description).toContain("\"type\":\"file\"");
+  });
+
+  it("creates a new canvas path instead of requiring an existing file", async () => {
+    const writeFile = vi.fn(() => Promise.resolve({ path: "Maps/New.canvas", message: "created", revision: "sha256:test" }));
+    const fakeClient = {
+      statPath: vi.fn(() => Promise.resolve({ path: "Maps/New.canvas", exists: false, kind: "missing", size: null, ctime: null, mtime: null, revision: null })),
+      writeFile,
+    } as unknown as VaultBackend;
+    const registerTool = vi.fn() as RegisterToolMock;
+
+    registerCreateCanvasTool({ registerTool } as never, fakeClient);
+    const handler = registerTool.mock.calls[0]?.[2];
+    if (typeof handler !== "function") {
+      throw new Error("registerTool handler was not registered");
+    }
+
+    const result = await handler({ path: "Maps/New.canvas", nodes: [], edges: [], open_after_create: false, overwrite: false });
+
+    expect(writeFile).toHaveBeenCalledWith("Maps/New.canvas", expect.any(String), {
+      contentType: "application/json; charset=utf-8",
+      mode: "create",
+    });
+    expect(result.structuredContent).toMatchObject({ path: "Maps/New.canvas", nodeCount: 0, edgeCount: 0 });
   });
 });

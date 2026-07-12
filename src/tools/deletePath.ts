@@ -3,6 +3,7 @@ import { z } from "zod";
 import { vaultPathSchema } from "../types.js";
 import type { ToolRegistrar } from "./common.js";
 import { errorResult, successResult } from "./common.js";
+import { collectTree, type TreeNode } from "./pathOperations.js";
 
 const inputSchema = z.object({
   path: vaultPathSchema.describe("Existing file or folder path to delete."),
@@ -17,8 +18,14 @@ export const registerDeletePathTool: ToolRegistrar = (server, backend) => {
       try {
         const stat = await backend.statPath(path);
         if (!stat.exists) throw new Error(`Path does not exist: ${path}`);
+        const deletedFiles = stat.kind === "file" ? 1 : recursive ? countFiles(await collectTree(backend, path)) : 0;
         await backend.deletePath(path, { recursive, ...(expectedRevision ? { expectedRevision } : {}) });
-        return successResult(`Deleted ${path}.`, { path, kind: stat.kind, deletedFiles: stat.kind === "file" ? 1 : 0 });
+        return successResult(`Deleted ${path}.`, { path, kind: stat.kind, deletedFiles });
       } catch (error) { return errorResult(error); }
     });
 };
+
+function countFiles(node: TreeNode): number {
+  if (!node.isFolder) return 1;
+  return (node.children ?? []).reduce((total, child) => total + countFiles(child), 0);
+}

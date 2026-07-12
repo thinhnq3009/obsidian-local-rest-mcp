@@ -29,6 +29,23 @@ describe("Markdown engine", () => {
     expect(patched).toContain("status: done");
   });
 
+  it("preserves array frontmatter when appending and prepending", () => {
+    const content = "---\ntags:\n  - mcp-test\n  - alpha\n---\n# Note\n";
+    const appended = patchFrontmatterContent(content, "tags", "appended-tag", "append", true);
+    const prepended = patchFrontmatterContent(appended, "tags", "prepended-tag", "prepend", true);
+    const metadata = parseMetadata(prepended);
+
+    expect(metadata.frontmatter.tags).toEqual(["prepended-tag", "mcp-test", "alpha", "appended-tag"]);
+    expect(prepended).not.toContain("prepended-tag[");
+  });
+
+  it("concatenates arrays when patching array frontmatter with array values", () => {
+    const content = "---\ntags: [alpha]\n---\n# Note\n";
+    const patched = patchFrontmatterContent(content, "tags", ["beta", "gamma"], "append", true);
+
+    expect(parseMetadata(patched).frontmatter.tags).toEqual(["alpha", "beta", "gamma"]);
+  });
+
   it("refuses malformed frontmatter without producing output", () => {
     expect(() => patchFrontmatterContent("---\nbroken: [\n---\nBody", "status", "done", "replace", true)).toThrow(/invalid yaml/i);
   });

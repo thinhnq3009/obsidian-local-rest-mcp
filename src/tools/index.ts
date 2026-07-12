@@ -29,6 +29,7 @@ import { registerBackendStatusTool } from "./backendStatus.js";
 import { registerCreateFolderTool } from "./createFolder.js";
 import { registerRebuildSearchIndexTool } from "./rebuildSearchIndex.js";
 import { registerVaultHealthTool } from "./vaultHealth.js";
+import { registerWriteNotesBulkTool } from "./writeNotesBulk.js";
 
 export const toolRegistrars: ToolRegistrar[] = [
   registerListFilesTool,
@@ -36,6 +37,7 @@ export const toolRegistrars: ToolRegistrar[] = [
   registerReadNoteMetadataTool,
   registerReadCanvasTool,
   registerWriteNoteTool,
+  registerWriteNotesBulkTool,
   registerCreateCanvasTool,
   registerUpdateCanvasTool,
   registerDeleteCanvasTool,
@@ -59,6 +61,6 @@ export const toolRegistrars: ToolRegistrar[] = [
   registerBackendStatusTool,
   registerVaultHealthTool,
   registerRebuildSearchIndexTool,
+  registerGetActiveFileTool,
+  registerOpenFileTool,
 ];
-
-export const runtimeToolRegistrars: ToolRegistrar[] = [registerGetActiveFileTool, registerOpenFileTool];

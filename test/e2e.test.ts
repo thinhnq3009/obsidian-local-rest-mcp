@@ -31,6 +31,21 @@ describe("standalone STDIO server", () => {
       expect(structured.revision).toMatch(/^sha256:/u);
       const replaced = await client.callTool({ name: "obsidian_write_note", arguments: { path: "E2E.md", content: "# Updated\n", mode: "replace", expected_revision: structured.revision } });
       expect(replaced.isError).not.toBe(true);
+      const reread = await client.callTool({ name: "obsidian_read_note", arguments: { path: "E2E.md" } });
+      const updated = reread.structuredContent as { revision?: string };
+      const overwrite = await client.callTool({ name: "obsidian_write_note", arguments: { path: "E2E.md", content: "# Overwrite alias\n", overwrite: true, expected_revision: updated.revision } });
+      expect(overwrite.isError).not.toBe(true);
+      const bulk = await client.callTool({
+        name: "obsidian_write_notes_bulk",
+        arguments: {
+          files: [
+            { path: "Bulk/One.md", content: "# One\n" },
+            { path: "Bulk/Two.md", content: "# Two\n" },
+          ],
+        },
+      });
+      expect(bulk.isError).not.toBe(true);
+      expect((bulk.structuredContent as { count?: number }).count).toBe(2);
     } finally {
       await client.close();
     }

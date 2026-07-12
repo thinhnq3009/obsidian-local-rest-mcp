@@ -31,6 +31,7 @@ const envSchema = z.object({
   OBSIDIAN_BASE_URL: z.preprocess((value) => value ?? DEFAULT_BASE_URL, z.url()),
   OBSIDIAN_VERIFY_SSL: booleanString(false),
   MCP_TRANSPORT: z.preprocess((value) => value ?? "stdio", z.enum(["stdio", "http"])),
+  COLORFUL_LOGS: booleanString(false),
   MCP_HTTP_HOST: z.preprocess((value) => value ?? "127.0.0.1", z.string().trim().min(1)),
   MCP_HTTP_PORT: z.preprocess((value) => value ?? DEFAULT_MCP_HTTP_PORT, z.coerce.number().int().min(1).max(65_535)),
   MCP_HTTP_PATH: z.preprocess((value) => value ?? "/mcp", z.string().trim().min(1).refine((value) => value.startsWith("/"), "MCP_HTTP_PATH must start with /")),
@@ -75,6 +76,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env, argv: string
     requestTimeoutMs: DEFAULT_TIMEOUT_MS,
     retryCount: DEFAULT_RETRY_COUNT,
     mcpTransport: data.MCP_TRANSPORT,
+    colorfulLogs: data.COLORFUL_LOGS,
     mcpHttpHost: data.MCP_HTTP_HOST,
     mcpHttpPort: data.MCP_HTTP_PORT,
     mcpHttpPath: data.MCP_HTTP_PATH.replace(/\/+$/u, "") || "/",
@@ -153,6 +155,7 @@ export function parseCliArgs(argv: string[]): CliOverrides {
     if (!argument?.startsWith("--")) continue;
     if (argument === "--http" || argument === "--stdio") { overrides.MCP_TRANSPORT = argument.slice(2); continue; }
     if (argument === "--read-only") { overrides.READ_ONLY = "true"; continue; }
+    if (argument === "--colorful") { overrides.COLORFUL_LOGS = "true"; continue; }
     const [rawKey, inlineValue] = argument.slice(2).split("=", 2);
     const candidate = inlineValue ?? argv[index + 1];
     const value = inlineValue ?? (candidate && !candidate.startsWith("--") ? candidate : undefined);

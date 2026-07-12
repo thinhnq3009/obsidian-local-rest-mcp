@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 describe("startHttpServer", () => {
-  it("serves standalone tools and hides Obsidian runtime-only tools", async () => {
+  it("serves standalone tools with schemas matching registered handlers", async () => {
     const vault = await createTempVault(); vaults.push(vault);
     const server = await startHttpServer(makeConfig({ vaultPath: vault, mcpTransport: "http", mcpHttpPort: 0 })); servers.push(server);
     const address = server.address();
@@ -31,26 +31,36 @@ describe("startHttpServer", () => {
       const names = result.tools.map((tool) => tool.name);
       expect(names).toContain("obsidian_backend_status");
       expect(names).toContain("obsidian_create_folder");
-      expect(names).not.toContain("obsidian_get_active_file");
-      expect(names).not.toContain("obsidian_open_file");
+      expect(names).toContain("obsidian_get_active_file");
+      expect(names).toContain("obsidian_open_file");
+      expect(names).toContain("obsidian_write_notes_bulk");
       expect(result.tools.filter((tool) => !tool.outputSchema).map((tool) => tool.name)).toEqual([]);
       for (const tool of result.tools) {
         expect(tool.outputSchema).toMatchObject({ type: "object" });
       }
+      for (const name of revisionToolNames) {
+        const tool = result.tools.find((candidate) => candidate.name === name);
+        const inputSchema = tool?.inputSchema as { properties?: Record<string, unknown> } | undefined;
+        expect(inputSchema?.properties).toHaveProperty("expected_revision");
+      }
+
       const writes: string[] = [];
       const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
         writes.push(String(chunk));
         return true;
       });
-      await client.callTool({ name: "obsidian_backend_status", arguments: {} });
+      const active = await client.callTool({ name: "obsidian_get_active_file", arguments: {} });
       writeSpy.mockRestore();
-      const logLine = writes.find((line) => line.includes("tool=obsidian_backend_status"));
+      expect(active.isError).toBe(true);
+      const activeText = (active.content as Array<{ text?: string }>).map((item) => item.text ?? "").join("\n");
+      expect(activeText).toContain("unsupported");
+      const logLine = writes.find((line) => line.includes("tool=obsidian_get_active_file"));
       expect(logLine).toBeDefined();
       expect(logLine).toContain("caller=http");
       expect(logLine).toContain(`host=127.0.0.1:${String(address.port)}`);
       expect(logLine).toContain("ua=node");
       expect(logLine).toMatch(/request=\d+/u);
-      expect(logLine).toMatch(/out=\d+B ok \d+ms/u);
+      expect(logLine).toMatch(/out=\d+B error \d+ms/u);
     } finally { await client.close(); }
   });
 
@@ -70,3 +80,20 @@ describe("startHttpServer", () => {
     } finally { await client.close(); }
   });
 });
+
+const revisionToolNames = [
+  "obsidian_append_to_note",
+  "obsidian_patch_heading",
+  "obsidian_patch_frontmatter",
+  "obsidian_rename_path",
+  "obsidian_move_path",
+  "obsidian_delete_path",
+  "obsidian_add_canvas_node",
+  "obsidian_add_canvas_edge",
+  "obsidian_update_canvas",
+  "obsidian_update_canvas_node",
+  "obsidian_update_canvas_edge",
+  "obsidian_remove_canvas_node",
+  "obsidian_remove_canvas_edge",
+  "obsidian_delete_canvas",
+];

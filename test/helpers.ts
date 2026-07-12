@@ -21,6 +21,7 @@ export function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     requestTimeoutMs: 10_000,
     retryCount: 0,
     mcpTransport: "stdio",
+    colorfulLogs: false,
     mcpHttpHost: "127.0.0.1",
     mcpHttpPort: 39145,
     mcpHttpPath: "/mcp",

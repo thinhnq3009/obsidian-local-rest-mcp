@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { VaultBackend } from "../src/backend/types.js";
+import { registerDeletePathTool } from "../src/tools/deletePath.js";
+import { registerSearchTool } from "../src/tools/search.js";
 import { collectMarkdownTree, renameWithinParent } from "../src/tools/pathOperations.js";
 import { performMovePath } from "../src/tools/movePath.js";
+
+type ToolResult = { structuredContent?: Record<string, unknown> };
+type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>;
+type RegisterToolMock = ReturnType<typeof vi.fn> & { mock: { calls: Array<[unknown, unknown, ToolHandler]> } };
 
 describe("renameWithinParent", () => {
   it("rejects separator characters in new_name", () => {
@@ -41,3 +47,50 @@ describe("performMovePath", () => {
     expect(result.kind).toBe("file");
   });
 });
+
+describe("tool response contracts", () => {
+  it("includes the query required by the search output schema", async () => {
+    const search = vi.fn(() => Promise.resolve({ results: [{ path: "Notes/Alpha.md", score: 1, snippet: "Alpha" }] }));
+    const handler = registeredHandler(registerSearchTool, { search } as unknown as VaultBackend);
+
+    const result = await handler({ query: "Alpha", limit: 10 });
+
+    expect(result.structuredContent).toMatchObject({
+      query: "Alpha",
+      results: [{ path: "Notes/Alpha.md" }],
+    });
+  });
+
+  it("counts files before recursively deleting a folder", async () => {
+    const deletePath = vi.fn(() => Promise.resolve());
+    const fakeBackend = {
+      statPath: vi.fn(() => Promise.resolve({ path: "Nested", exists: true, kind: "folder", size: null, ctime: null, mtime: null, revision: null })),
+      listFiles: vi.fn((path: string = "") => {
+        const entries: Array<{ path: string; name: string; isFolder: boolean }> =
+          path === "Nested"
+            ? [
+                { path: "Nested/One.md", name: "One.md", isFolder: false },
+                { path: "Nested/Deeper", name: "Deeper", isFolder: true },
+              ]
+            : [{ path: "Nested/Deeper/Two.md", name: "Two.md", isFolder: false }];
+
+        return Promise.resolve({ root: path, entries });
+      }),
+      deletePath,
+    } as unknown as VaultBackend;
+    const handler = registeredHandler(registerDeletePathTool, fakeBackend);
+
+    const result = await handler({ path: "Nested", recursive: true });
+
+    expect(deletePath).toHaveBeenCalledWith("Nested", { recursive: true });
+    expect(result.structuredContent).toMatchObject({ path: "Nested", kind: "folder", deletedFiles: 2 });
+  });
+});
+
+function registeredHandler(registrar: (server: never, backend: VaultBackend) => void, backend: VaultBackend) {
+  const registerTool = vi.fn() as RegisterToolMock;
+  registrar({ registerTool } as never, backend);
+  const handler = registerTool.mock.calls[0]?.[2];
+  if (typeof handler !== "function") throw new Error("registerTool handler was not registered");
+  return handler;
+}

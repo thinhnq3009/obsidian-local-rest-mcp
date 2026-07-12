@@ -6,7 +6,7 @@ import type { CallToolResult, ServerNotification, ServerRequest } from "@modelco
 import { FilesystemVaultBackend } from "./backend/filesystem.js";
 import { LocalRestBackend } from "./backend/localRest.js";
 import type { VaultBackend } from "./backend/types.js";
-import { runtimeToolRegistrars, toolRegistrars } from "./tools/index.js";
+import { toolRegistrars } from "./tools/index.js";
 import type { AppConfig } from "./types.js";
 
 export type ApplicationContext = { backend: VaultBackend; close(): Promise<void> };
@@ -19,27 +19,26 @@ export async function createApplication(config: AppConfig): Promise<ApplicationC
   return { backend, close: () => backend.close() };
 }
 
-export function createMcpServer(backend: VaultBackend) {
+type McpServerOptions = { colorfulLogs?: boolean };
+
+export function createMcpServer(backend: VaultBackend, options: McpServerOptions = {}) {
   const server = new McpServer({ name: "obsidian-vault-mcp", version: "1.0.0" });
-  installToolCallLogging(server);
+  installToolCallLogging(server, options);
   for (const registerTool of toolRegistrars) registerTool(server, backend);
-  if (backend.capabilities.activeFile || backend.capabilities.openFile) {
-    for (const registerTool of runtimeToolRegistrars) registerTool(server, backend);
-  }
   return server;
 }
 
 export async function createServer(config: AppConfig, options: { application?: ApplicationContext } = {}) {
   const application = options.application ?? await createApplication(config);
-  return { server: createMcpServer(application.backend), backend: application.backend, application };
+  return { server: createMcpServer(application.backend, { colorfulLogs: config.colorfulLogs }), backend: application.backend, application };
 }
 
-function installToolCallLogging(server: McpServer): void {
+function installToolCallLogging(server: McpServer, options: McpServerOptions): void {
   const registerTool = server.registerTool.bind(server);
-  server.registerTool = ((name, config, callback) => registerTool(name, config, wrapToolCallback(name, callback))) as McpServer["registerTool"];
+  server.registerTool = ((name, config, callback) => registerTool(name, config, wrapToolCallback(name, callback, options))) as McpServer["registerTool"];
 }
 
-function wrapToolCallback<InputArgs extends ToolInputSchema>(toolName: string, callback: ToolCallback<InputArgs>): ToolCallback<InputArgs> {
+function wrapToolCallback<InputArgs extends ToolInputSchema>(toolName: string, callback: ToolCallback<InputArgs>, options: McpServerOptions): ToolCallback<InputArgs> {
   const wrapped = async (...args: Parameters<ToolCallback<InputArgs>>): Promise<CallToolResult> => {
     const startedAt = Date.now();
     const { input, extra } = extractToolCallArgs(args);
@@ -48,10 +47,10 @@ function wrapToolCallback<InputArgs extends ToolInputSchema>(toolName: string, c
       const invoke = callback as (...invokeArgs: Parameters<ToolCallback<InputArgs>>) => CallToolResult | Promise<CallToolResult>;
       const result = await invoke(...args);
       const error = result.isError === true ? errorSummaryFromResult(result) : undefined;
-      writeToolLog({ toolName, extra, inputBytes, outputBytes: jsonByteLength(result), durationMs: Date.now() - startedAt, status: result.isError === true ? "error" : "ok", ...(error ? { error } : {}) });
+      writeToolLog({ toolName, extra, inputBytes, outputBytes: jsonByteLength(result), durationMs: Date.now() - startedAt, status: result.isError === true ? "error" : "ok", colorful: options.colorfulLogs === true, ...(error ? { error } : {}) });
       return result;
     } catch (error) {
-      writeToolLog({ toolName, extra, inputBytes, outputBytes: 0, durationMs: Date.now() - startedAt, status: "error", error: error instanceof Error ? error.message : String(error) });
+      writeToolLog({ toolName, extra, inputBytes, outputBytes: 0, durationMs: Date.now() - startedAt, status: "error", colorful: options.colorfulLogs === true, error: error instanceof Error ? error.message : String(error) });
       throw error;
     }
   };
@@ -66,18 +65,25 @@ function extractToolCallArgs(args: readonly unknown[]): { input: unknown; extra:
   };
 }
 
-function writeToolLog(event: { toolName: string; extra: Partial<ToolExtra> | undefined; inputBytes: number; outputBytes: number; durationMs: number; status: "ok" | "error"; error?: string }): void {
+function writeToolLog(event: { toolName: string; extra: Partial<ToolExtra> | undefined; inputBytes: number; outputBytes: number; durationMs: number; status: "ok" | "error"; colorful: boolean; error?: string }): void {
   const caller = callerFields(event.extra);
   const fields = [
-    `[obsidian-vault-mcp] tool=${event.toolName}`,
+    colorize("[obsidian-vault-mcp]", "cyan", event.colorful),
+    `tool=${colorize(event.toolName, "magenta", event.colorful)}`,
     ...caller,
     `in=${event.inputBytes}B`,
     `out=${event.outputBytes}B`,
-    event.status,
-    `${event.durationMs}ms`,
+    colorize(event.status, event.status === "ok" ? "green" : "red", event.colorful),
+    colorize(`${event.durationMs}ms`, "yellow", event.colorful),
   ];
   if (event.error) fields.push(`error=${formatField(event.error, 120)}`);
   process.stderr.write(`${fields.join(" ")}\n`);
+}
+
+function colorize(value: string, color: "cyan" | "green" | "magenta" | "red" | "yellow", enabled: boolean): string {
+  if (!enabled) return value;
+  const codes = { cyan: 36, green: 32, magenta: 35, red: 31, yellow: 33 } as const;
+  return `\u001B[${String(codes[color])}m${value}\u001B[0m`;
 }
 
 function callerFields(extra: Partial<ToolExtra> | undefined): string[] {
