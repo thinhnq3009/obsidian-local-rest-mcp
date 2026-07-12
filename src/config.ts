@@ -39,6 +39,8 @@ const envSchema = z.object({
 });
 
 type CliOverrides = Record<string, string | undefined>;
+type VaultCandidate = { path: string; open: boolean };
+type ObsidianRegistry = { vaults?: Record<string, { path?: unknown; open?: unknown }> };
 
 export function loadConfig(source: NodeJS.ProcessEnv = process.env, argv: string[] = process.argv.slice(2)): AppConfig {
   const parsedArgs = parseCliArgs(argv);
@@ -50,13 +52,14 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env, argv: string
   const parsed = envSchema.safeParse(merged);
   if (!parsed.success) throw new Error(`Invalid configuration: ${parsed.error.issues.map((issue) => issue.message).join("; ")}`);
   const data = parsed.data;
-  if (data.BACKEND === "filesystem" && !data.VAULT_PATH) throw new Error("Invalid filesystem configuration: VAULT_PATH is required");
+  const vaultPath = data.BACKEND === "filesystem" ? resolveFilesystemVaultPath(data.VAULT_PATH, merged) : data.VAULT_PATH;
+  if (data.BACKEND === "filesystem" && !vaultPath) throw new Error("Invalid filesystem configuration: VAULT_PATH is required and no Obsidian vault could be auto-detected. Pass --vault or set VAULT_PATH.");
   if (data.BACKEND === "local-rest" && !data.OBSIDIAN_API_KEY) throw new Error("Invalid Local REST configuration: OBSIDIAN_API_KEY is required");
   if (!isLoopbackHost(data.MCP_HTTP_HOST) && !data.MCP_AUTH_TOKEN) throw new Error("MCP_AUTH_TOKEN is required when MCP_HTTP_HOST is not loopback");
 
   return {
     backend: data.BACKEND,
-    ...(data.VAULT_PATH ? { vaultPath: path.resolve(data.VAULT_PATH) } : {}),
+    ...(vaultPath ? { vaultPath: path.resolve(vaultPath) } : {}),
     readOnly: data.READ_ONLY,
     readPaths: splitList(data.READ_PATHS),
     writePaths: splitList(data.WRITE_PATHS),
@@ -78,6 +81,64 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env, argv: string
     ...(splitList(data.MCP_ALLOWED_HOSTS).length > 0 ? { mcpAllowedHosts: splitList(data.MCP_ALLOWED_HOSTS) } : {}),
     ...(data.MCP_AUTH_TOKEN ? { mcpAuthToken: data.MCP_AUTH_TOKEN } : {}),
   };
+}
+
+function resolveFilesystemVaultPath(configuredPath: string | undefined, environment: Record<string, string | undefined>): string | undefined {
+  if (configuredPath) return configuredPath;
+  const registryCandidates = readObsidianRegistryCandidates(environment);
+  const openCandidates = registryCandidates.filter((candidate) => candidate.open);
+  if (openCandidates.length === 1) return openCandidates[0]?.path;
+  if (openCandidates.length > 1) throw new Error("Invalid filesystem configuration: multiple open Obsidian vaults were auto-detected. Pass --vault or set VAULT_PATH.");
+  if (registryCandidates.length === 1) return registryCandidates[0]?.path;
+  if (registryCandidates.length > 1) throw new Error("Invalid filesystem configuration: multiple Obsidian vaults were auto-detected. Pass --vault or set VAULT_PATH.");
+
+  const currentDirectory = process.cwd();
+  return isValidVaultPath(currentDirectory) ? currentDirectory : undefined;
+}
+
+function readObsidianRegistryCandidates(environment: Record<string, string | undefined>): VaultCandidate[] {
+  const registryPath = obsidianRegistryPath(environment);
+  if (!registryPath || !fs.existsSync(registryPath)) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(registryPath, "utf8"));
+  } catch {
+    return [];
+  }
+  if (!isObsidianRegistry(parsed) || !parsed.vaults) return [];
+  return Object.values(parsed.vaults)
+    .map((vault): VaultCandidate | undefined => {
+      if (typeof vault.path !== "string" || vault.path.trim() === "") return undefined;
+      const candidate = path.resolve(vault.path);
+      if (!isValidVaultPath(candidate)) return undefined;
+      return { path: candidate, open: vault.open === true };
+    })
+    .filter((candidate): candidate is VaultCandidate => candidate !== undefined);
+}
+
+function obsidianRegistryPath(environment: Record<string, string | undefined>): string | undefined {
+  if (process.platform === "win32") {
+    const appData = environment.APPDATA;
+    return appData ? path.join(appData, "obsidian", "obsidian.json") : undefined;
+  }
+  if (process.platform === "darwin") {
+    const home = environment.HOME;
+    return home ? path.join(home, "Library", "Application Support", "obsidian", "obsidian.json") : undefined;
+  }
+  const configHome = environment.XDG_CONFIG_HOME ?? (environment.HOME ? path.join(environment.HOME, ".config") : undefined);
+  return configHome ? path.join(configHome, "obsidian", "obsidian.json") : undefined;
+}
+
+function isObsidianRegistry(value: unknown): value is ObsidianRegistry {
+  return Boolean(value && typeof value === "object" && ("vaults" in value));
+}
+
+function isValidVaultPath(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory() && fs.statSync(path.join(candidate, ".obsidian")).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export function parseCliArgs(argv: string[]): CliOverrides {

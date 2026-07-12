@@ -4,7 +4,7 @@ import type http from "node:http";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { startHttpServer } from "../src/http.js";
 import { createTempVault, makeConfig } from "./helpers.js";
@@ -13,6 +13,7 @@ const servers: http.Server[] = [];
 const vaults: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const server of servers.splice(0)) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   for (const vault of vaults.splice(0)) await fs.rm(vault, { recursive: true, force: true });
 });
@@ -36,6 +37,20 @@ describe("startHttpServer", () => {
       for (const tool of result.tools) {
         expect(tool.outputSchema).toMatchObject({ type: "object" });
       }
+      const writes: string[] = [];
+      const writeSpy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+        writes.push(String(chunk));
+        return true;
+      });
+      await client.callTool({ name: "obsidian_backend_status", arguments: {} });
+      writeSpy.mockRestore();
+      const logLine = writes.find((line) => line.includes("tool=obsidian_backend_status"));
+      expect(logLine).toBeDefined();
+      expect(logLine).toContain("caller=http");
+      expect(logLine).toContain(`host=127.0.0.1:${String(address.port)}`);
+      expect(logLine).toContain("ua=node");
+      expect(logLine).toMatch(/request=\d+/u);
+      expect(logLine).toMatch(/out=\d+B ok \d+ms/u);
     } finally { await client.close(); }
   });
 

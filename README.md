@@ -12,10 +12,16 @@ Version 1.0 is standalone-first. The former Local REST integration remains avail
 ## Quick start
 
 ```bash
+npx obsidian-local-rest-mcp
+```
+
+The server auto-detects a single open Obsidian vault from Obsidian's local registry. If detection is ambiguous, pass the vault explicitly:
+
+```bash
 npx obsidian-local-rest-mcp --vault "C:/Users/me/Documents/My Vault"
 ```
 
-Environment equivalent:
+Environment equivalent override:
 
 ```bash
 VAULT_PATH=C:/Users/me/Documents/My Vault
@@ -38,7 +44,7 @@ The default transport is STDIO. Obsidian, API keys, certificates, and REST endpo
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `VAULT_PATH` | required | Absolute path to the vault |
+| `VAULT_PATH` | auto-detected | Absolute path to the vault; overrides registry detection |
 | `BACKEND` | `filesystem` | `filesystem` or deprecated `local-rest` |
 | `READ_ONLY` | `false` | Disable all mutations |
 | `READ_PATHS` | all | Comma-separated readable prefixes |
@@ -77,6 +83,8 @@ command = "npx"
 args = ["-y", "obsidian-local-rest-mcp", "--vault", "C:/Users/me/Documents/My Vault"]
 ```
 
+When Obsidian has exactly one open vault recorded locally, the `--vault` argument can be omitted.
+
 ### Claude Desktop / Cursor
 
 ```json
@@ -89,6 +97,8 @@ args = ["-y", "obsidian-local-rest-mcp", "--vault", "C:/Users/me/Documents/My Va
   }
 }
 ```
+
+When Obsidian has exactly one open vault recorded locally, the `--vault` argument can be omitted.
 
 ## Tools
 

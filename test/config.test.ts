@@ -1,7 +1,17 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { loadConfig, parseCliArgs } from "../src/config.js";
+
+const tempDirs: string[] = [];
+const originalCwd = process.cwd();
+
+afterEach(async () => {
+  process.chdir(originalCwd);
+  for (const directory of tempDirs.splice(0)) await fs.rm(directory, { recursive: true, force: true });
+});
 
 describe("loadConfig", () => {
   it("uses standalone filesystem defaults", () => {
@@ -15,8 +25,62 @@ describe("loadConfig", () => {
   });
 
   it("requires only vault path in filesystem mode", () => {
-    expect(() => loadConfig({}, [])).toThrow(/VAULT_PATH is required/);
+    expect(() => loadConfig({}, [])).toThrow(/no Obsidian vault could be auto-detected/);
     expect(() => loadConfig({ VAULT_PATH: "." }, [])).not.toThrow();
+  });
+
+  it("keeps explicit vault path above auto-detected registry paths", async () => {
+    const root = await createTempDir();
+    const detectedVault = await createVault(root, "Detected");
+    const explicitVault = await createVault(root, "Explicit");
+    const registry = await createRegistry(root, { detected: { path: detectedVault, open: true } });
+
+    const config = loadConfig({ ...registry.environment, VAULT_PATH: explicitVault }, []);
+
+    expect(config.vaultPath).toBe(path.resolve(explicitVault));
+  });
+
+  it("auto-detects the single open Obsidian registry vault", async () => {
+    const root = await createTempDir();
+    const closedVault = await createVault(root, "Closed");
+    const openVault = await createVault(root, "Open");
+    const registry = await createRegistry(root, {
+      closed: { path: closedVault, open: false },
+      open: { path: openVault, open: true },
+    });
+
+    const config = loadConfig(registry.environment, []);
+
+    expect(config.vaultPath).toBe(path.resolve(openVault));
+  });
+
+  it("falls back to the current directory when it is an Obsidian vault", async () => {
+    const root = await createTempDir();
+    const vault = await createVault(root, "Current");
+    process.chdir(vault);
+
+    const config = loadConfig({}, []);
+
+    expect(config.vaultPath).toBe(path.resolve(vault));
+  });
+
+  it("fails when no vault can be auto-detected", async () => {
+    const root = await createTempDir();
+    process.chdir(root);
+
+    expect(() => loadConfig({}, [])).toThrow(/Pass --vault or set VAULT_PATH/);
+  });
+
+  it("fails when multiple registered vaults are valid and none is open", async () => {
+    const root = await createTempDir();
+    const firstVault = await createVault(root, "First");
+    const secondVault = await createVault(root, "Second");
+    const registry = await createRegistry(root, {
+      first: { path: firstVault, open: false },
+      second: { path: secondVault, open: false },
+    });
+
+    expect(() => loadConfig(registry.environment, [])).toThrow(/multiple Obsidian vaults/);
   });
 
   it("validates Local REST configuration only in compatibility mode", () => {
@@ -56,3 +120,34 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs(["--backend=local-rest", "--api-key", "abc", "--http", "--port=9999"])).toEqual({ BACKEND: "local-rest", OBSIDIAN_API_KEY: "abc", MCP_TRANSPORT: "http", MCP_HTTP_PORT: "9999" });
   });
 });
+
+async function createTempDir(): Promise<string> {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "obsidian-vault-mcp-config-"));
+  tempDirs.push(directory);
+  return directory;
+}
+
+async function createVault(root: string, name: string): Promise<string> {
+  const vault = path.join(root, name);
+  await fs.mkdir(path.join(vault, ".obsidian"), { recursive: true });
+  return vault;
+}
+
+async function createRegistry(root: string, vaults: Record<string, { path: string; open: boolean }>): Promise<{ environment: NodeJS.ProcessEnv }> {
+  const registryPath = registryFilePath(root);
+  await fs.mkdir(path.dirname(registryPath), { recursive: true });
+  await fs.writeFile(registryPath, JSON.stringify({ vaults }), "utf8");
+  return { environment: registryEnvironment(root) };
+}
+
+function registryFilePath(root: string): string {
+  if (process.platform === "win32") return path.join(root, "AppData", "obsidian", "obsidian.json");
+  if (process.platform === "darwin") return path.join(root, "Library", "Application Support", "obsidian", "obsidian.json");
+  return path.join(root, "config", "obsidian", "obsidian.json");
+}
+
+function registryEnvironment(root: string): NodeJS.ProcessEnv {
+  if (process.platform === "win32") return { APPDATA: path.join(root, "AppData") };
+  if (process.platform === "darwin") return { HOME: root };
+  return { XDG_CONFIG_HOME: path.join(root, "config") };
+}
