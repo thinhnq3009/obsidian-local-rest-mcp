@@ -6,3 +6,6 @@ coverage/
 npm-debug.log*
 request.md
 AGENTS.md
+.gitnexus
+.claude/
+CLAUDE.md
