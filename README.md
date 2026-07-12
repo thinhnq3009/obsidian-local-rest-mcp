@@ -56,6 +56,7 @@ The default transport is STDIO. Obsidian, API keys, certificates, and REST endpo
 | `MAX_TREE_ENTRIES` | `10000` | Traversal safety limit |
 | `MAX_SEARCH_RESULTS` | `100` | Server-side search limit |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `http` |
+| `COLORFUL_LOGS` | `false` | Enable ANSI-colored server logs |
 | `MCP_HTTP_HOST` | `127.0.0.1` | HTTP bind host |
 | `MCP_HTTP_PORT` | `39145` | HTTP bind port |
 | `MCP_HTTP_PATH` | `/mcp` | Streamable HTTP endpoint |
@@ -67,7 +68,7 @@ CLI arguments override `.env` and environment values:
 ```text
 --vault --backend --read-only --read-path --write-path
 --index-mode --watch-mode --cache-dir
---http --stdio --transport --host --port --path --auth-token
+--http --stdio --transport --host --port --path --auth-token --colorful
 ```
 
 `--read-path` and `--write-path` may be repeated.
