@@ -32,6 +32,10 @@ describe("startHttpServer", () => {
       expect(names).toContain("obsidian_create_folder");
       expect(names).not.toContain("obsidian_get_active_file");
       expect(names).not.toContain("obsidian_open_file");
+      expect(result.tools.filter((tool) => !tool.outputSchema).map((tool) => tool.name)).toEqual([]);
+      for (const tool of result.tools) {
+        expect(tool.outputSchema).toMatchObject({ type: "object" });
+      }
     } finally { await client.close(); }
   });
 

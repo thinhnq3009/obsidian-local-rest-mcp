@@ -33,12 +33,5 @@ export function errorResult(error: unknown) {
   return {
     isError: true,
     content: [{ type: "text" as const, text: `${normalized.code}: ${normalized.message}` }],
-    structuredContent: {
-      error: {
-        code: normalized.code,
-        message: normalized.message,
-        status: normalized.status,
-      },
-    },
   };
 }
